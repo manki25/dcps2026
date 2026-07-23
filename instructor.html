@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Instructor Console — Thane–Powai Traffic</title>
+  <script src="https://unpkg.com/mqtt@5.14.1/dist/mqtt.min.js"></script>
+  <style>
+    :root{--bg:#f1f5f9;--panel:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--accent:#2563eb;--ok:#15803d;--warn:#b45309;--bad:#b91c1c}
+    *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+    header{background:#0f172a;color:white;padding:18px 22px}.head{max-width:1180px;margin:auto;display:flex;justify-content:space-between;gap:20px;align-items:center}
+    h1{margin:0;font-size:1.35rem}.sub{color:#cbd5e1;font-size:.86rem;margin-top:4px}.pill{background:#334155;padding:7px 10px;border-radius:999px;font-size:.8rem}
+    main{max-width:1180px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:1.4fr .8fr;gap:16px}@media(max-width:850px){.grid{grid-template-columns:1fr}}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 3px 14px #0f172a0b}.panel h2{font-size:1rem;margin:0 0 13px}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}@media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}}
+    .stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px}.stat .n{font-size:1.55rem;font-weight:800}.stat .l{font-size:.78rem;color:var(--muted)}
+    .routes{display:grid;gap:10px}.route{border:1px solid var(--line);border-radius:13px;padding:13px}.routehead{display:flex;justify-content:space-between;gap:10px}.route h3{font-size:.95rem;margin:0}.path{font-size:.76rem;color:var(--muted);margin-top:3px}.big{font-size:1.3rem;font-weight:800;text-align:right}
+    .bar{height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin:10px 0}.fill{height:100%;background:var(--accent)}
+    .routefoot{display:flex;justify-content:space-between;font-size:.8rem}.controls{display:grid;gap:10px}.row{display:flex;gap:8px;flex-wrap:wrap}
+    button{border:0;border-radius:10px;padding:10px 12px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}.secondary{background:#e2e8f0;color:var(--ink)}.danger{background:var(--bad)}.warning{background:var(--warn)}
+    input,select{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:9px;font-size:.95rem}.field{margin-bottom:10px}.field label{display:block;font-size:.78rem;font-weight:700;margin-bottom:4px}
+    table{width:100%;border-collapse:collapse;font-size:.82rem}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}th{color:var(--muted)}
+    dialog{border:0;border-radius:18px;padding:0;max-width:520px;width:calc(100% - 28px);box-shadow:0 20px 70px #0005}dialog::backdrop{background:#0f172ab3}.modal{padding:20px}.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:15px}
+    .switch{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line)}.small{font-size:.78rem;color:var(--muted)}
+  </style>
+</head>
+<body>
+<header><div class="head"><div><h1>Instructor Console</h1><div class="sub">Thane–Powai MQTT Traffic Simulation</div></div><div id="conn" class="pill">Not connected</div></div></header>
+<main>
+  <section class="stats">
+    <div class="stat"><div id="studentsN" class="n">0</div><div class="l">Students joined</div></div>
+    <div class="stat"><div id="avgTime" class="n">0</div><div class="l">Average travel time</div></div>
+    <div class="stat"><div id="systemTime" class="n">0</div><div class="l">Total system minutes</div></div>
+    <div class="stat"><div id="roundN" class="n">1</div><div class="l">Current round</div></div>
+  </section>
+  <div class="grid">
+    <div>
+      <section class="panel"><h2>Live route conditions</h2><div id="routes" class="routes"></div></section>
+      <section class="panel" style="margin-top:16px"><h2>Latest participants</h2><div style="overflow:auto;max-height:300px"><table><thead><tr><th>Student</th><th>Route</th><th>Updated</th></tr></thead><tbody id="studentsBody"></tbody></table></div></section>
+    </div>
+    <aside>
+      <section class="panel controls">
+        <h2>Simulation controls</h2>
+        <div class="row"><button id="toggleOpen">Close selection</button><button id="nextRound" class="secondary">Next round</button></div>
+        <div class="row"><button id="publish">Publish status</button><button id="reset" class="danger">Reset class</button></div>
+        <div class="switch"><div><strong>Reveal route counts</strong><div class="small">Show travellers on student phones</div></div><input id="reveal" type="checkbox" style="width:auto"></div>
+        <div class="field"><label>Message shown to students</label><input id="message" placeholder="Optional classroom instruction"></div>
+      </section>
+      <section class="panel" style="margin-top:16px">
+        <h2>Incident controls</h2>
+        <div class="field"><label>Route</label><select id="incidentRoute"></select></div>
+        <div class="field"><label>Incident</label><select id="incidentType"><option value="Heavy rain">Heavy rain</option><option value="Accident">Accident</option><option value="Waterlogging">Waterlogging</option><option value="Roadworks">Roadworks</option><option value="VIP movement">VIP movement</option></select></div>
+        <div class="field"><label>Extra delay (minutes)</label><input id="incidentDelay" type="number" value="20" min="1" max="120"></div>
+        <div class="row"><button id="applyIncident" class="warning">Apply incident</button><button id="clearIncident" class="secondary">Clear route incident</button></div>
+        <div class="row"><button id="closeRoute" class="danger">Close route</button><button id="openRoute" class="secondary">Reopen route</button></div>
+      </section>
+      <section class="panel" style="margin-top:16px">
+        <h2>Connection</h2>
+        <div class="small">Session: <strong id="sessionLabel">—</strong></div>
+        <div class="row" style="margin-top:10px"><button id="settings" class="secondary">Settings</button><button id="reconnect">Reconnect</button></div>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<dialog id="settingsDialog"><form id="settingsForm" class="modal">
+  <h2 style="margin-top:0">MQTT connection</h2>
+  <div class="field"><label>Broker host</label><input id="host" value="mcdcc0c1.ala.asia-southeast1.emqxsl.com" required></div>
+  <div class="field"><label>Secure WebSocket port</label><input id="port" value="8084" required></div>
+  <div class="field"><label>Instructor MQTT username</label><input id="username" required></div>
+  <div class="field"><label>Instructor MQTT password</label><input id="password" type="password" required></div>
+  <div class="field"><label>Class session code</label><input id="session" value="CLASS01" required></div>
+  <div class="actions"><button type="button" class="secondary" id="cancelSettings">Cancel</button><button>Save and connect</button></div>
+</form></dialog>
+
+<script>
+(() => {
+  const $=id=>document.getElementById(id);
+  const BASE_ROUTES=[
+    {id:'R1',name:'EEH – JVLR',path:'Thane → Mulund → EEH → JVLR',freeFlow:45,capacity:18},
+    {id:'R2',name:'Mulund – Airoli',path:'Thane → Mulund → Airoli Bridge → Powai',freeFlow:50,capacity:24},
+    {id:'R3',name:'LBS – Vikhroli',path:'Thane → LBS Marg → Vikhroli → Powai',freeFlow:55,capacity:28},
+    {id:'R4',name:'Ghodbunder – WEH',path:'Thane → Ghodbunder → WEH → JVLR',freeFlow:65,capacity:35}
+  ];
+  let client=null, students={}, open=true, revealCounts=false, round=1, message='', incidents={};
+  function cfg(){try{return JSON.parse(localStorage.getItem('tp_instructor_cfg'))||{}}catch{return{}}}
+  function topic(k){return `dcps/traffic/${cfg().session.trim().toUpperCase()}/${k}`}
+  function routeStats(){
+    const counts=Object.fromEntries(BASE_ROUTES.map(r=>[r.id,0]));
+    Object.values(students).forEach(s=>{if(counts[s.routeId]!==undefined)counts[s.routeId]++});
+    return BASE_ROUTES.map(r=>{
+      const vehicles=counts[r.id], inc=incidents[r.id]||{}, ratio=vehicles/r.capacity;
+      let travelTime=Math.round(r.freeFlow*(1+0.8*Math.pow(ratio,2))+(inc.delay||0));
+      let status=ratio<.45?'Light':ratio<.85?'Moderate':ratio<1.2?'Heavy':'Severe';
+      if(inc.closed){status='Closed';travelTime=999}
+      return {...r,vehicles,travelTime,status,incident:inc.label||'',closed:!!inc.closed};
+    });
+  }
+  function payload(){
+    return {timestamp:new Date().toISOString(),round,open,revealCounts,message,routes:routeStats()};
+  }
+  function publishStatus(){
+    if(!client?.connected)return;
+    client.publish(topic('status'),JSON.stringify(payload()),{qos:1,retain:true});
+    render();
+  }
+  function render(){
+    const routes=routeStats(), n=Object.keys(students).length;
+    const active=routes.filter(r=>!r.closed), total=routes.reduce((sum,r)=>sum+(r.closed?0:r.travelTime*r.vehicles),0);
+    $('studentsN').textContent=n; $('systemTime').textContent=total; $('avgTime').textContent=n?Math.round(total/n):0; $('roundN').textContent=round;
+    $('toggleOpen').textContent=open?'Close selection':'Open selection'; $('reveal').checked=revealCounts; $('message').value=message;
+    $('routes').innerHTML=routes.map(r=>`<div class="route"><div class="routehead"><div><h3>${r.name}</h3><div class="path">${r.path}</div></div><div class="big">${r.closed?'CLOSED':r.travelTime+' min'}</div></div><div class="bar"><div class="fill" style="width:${Math.min(100,r.vehicles/r.capacity*100)}%"></div></div><div class="routefoot"><span>${r.vehicles} students · capacity ${r.capacity}</span><strong>${r.status}${r.incident?' · '+r.incident:''}</strong></div></div>`).join('');
+    $('studentsBody').innerHTML=Object.values(students).sort((a,b)=>b.timestamp.localeCompare(a.timestamp)).slice(0,100).map(s=>`<tr><td>${escapeHtml(s.studentName||s.studentId.slice(0,8))}</td><td>${s.routeId}</td><td>${new Date(s.timestamp).toLocaleTimeString()}</td></tr>`).join('');
+    $('sessionLabel').textContent=cfg().session||'—';
+  }
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+  function connect(){
+    const c=cfg(); if(!c.host||!c.port||!c.username||!c.password||!c.session){openSettings();return}
+    if(client){try{client.end(true)}catch{}}
+    $('conn').textContent='Connecting…';
+    client=mqtt.connect(`wss://${c.host}:${c.port}/mqtt`,{username:c.username,password:c.password,clientId:`instructor_${Date.now().toString(36)}`,clean:true,reconnectPeriod:2500,connectTimeout:12000,protocolVersion:4});
+    client.on('connect',()=>{$('conn').textContent='Connected';client.subscribe(topic('selection'),{qos:1});publishStatus()});
+    client.on('reconnect',()=>{$('conn').textContent='Reconnecting…'});client.on('offline',()=>{$('conn').textContent='Offline'});client.on('error',e=>{$('conn').textContent='Connection error';console.error(e)});
+    client.on('message',(t,m)=>{if(t!==topic('selection'))return;try{const d=JSON.parse(m.toString());if(d.studentId&&d.routeId){students[d.studentId]={...d,timestamp:d.timestamp||new Date().toISOString()};publishStatus()}}catch(e){console.warn(e)}});
+    render();
+  }
+  function openSettings(){const c=cfg();['host','port','username','password','session'].forEach(k=>{if(c[k])$(k).value=c[k]});$('settingsDialog').showModal()}
+  $('settingsForm').onsubmit=e=>{e.preventDefault();const c={host:$('host').value.trim(),port:$('port').value.trim(),username:$('username').value.trim(),password:$('password').value,session:$('session').value.trim().toUpperCase()};localStorage.setItem('tp_instructor_cfg',JSON.stringify(c));$('settingsDialog').close();connect()};
+  $('cancelSettings').onclick=()=>$('settingsDialog').close(); $('settings').onclick=openSettings; $('reconnect').onclick=connect;
+  $('toggleOpen').onclick=()=>{open=!open;publishStatus()}; $('reveal').onchange=e=>{revealCounts=e.target.checked;publishStatus()}; $('message').onchange=e=>{message=e.target.value;publishStatus()};
+  $('publish').onclick=publishStatus; $('nextRound').onclick=()=>{round++;open=true;message='';publishStatus()};
+  $('reset').onclick=()=>{if(!confirm('Reset all student selections and incidents?'))return;students={};incidents={};open=true;round=1;message='';client?.publish(topic('control'),JSON.stringify({command:'clearSelection'}),{qos:1});publishStatus()};
+  const selectedRoute=()=> $('incidentRoute').value;
+  $('applyIncident').onclick=()=>{incidents[selectedRoute()]={label:$('incidentType').value,delay:Number($('incidentDelay').value)||20,closed:false};publishStatus()};
+  $('clearIncident').onclick=()=>{delete incidents[selectedRoute()];publishStatus()};
+  $('closeRoute').onclick=()=>{incidents[selectedRoute()]={label:'Road closed',delay:0,closed:true};publishStatus()};
+  $('openRoute').onclick=()=>{delete incidents[selectedRoute()];publishStatus()};
+  $('incidentRoute').innerHTML=BASE_ROUTES.map(r=>`<option value="${r.id}">${r.id} — ${r.name}</option>`).join('');
+  render();connect();
+})();
+</script>
+</body>
+</html>

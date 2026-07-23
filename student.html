@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Thane–Powai Route Challenge</title>
+  <script src="https://unpkg.com/mqtt@5.14.1/dist/mqtt.min.js"></script>
+  <style>
+    :root { --bg:#f8fafc; --panel:#fff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --accent:#2563eb; --ok:#15803d; --warn:#b45309; --bad:#b91c1c; }
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+    header{background:#0f172a;color:white;padding:18px 16px 22px;position:sticky;top:0;z-index:5;box-shadow:0 2px 12px #0002}
+    h1{font-size:1.25rem;margin:0 0 5px}.sub{font-size:.88rem;color:#cbd5e1}
+    .toprow{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .pill{font-size:.76rem;padding:6px 9px;border-radius:999px;background:#334155;color:#e2e8f0;white-space:nowrap}
+    main{max-width:680px;margin:auto;padding:14px 14px 80px}
+    .notice,.selected{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+    .notice strong{display:block;margin-bottom:3px}.small{font-size:.82rem;color:var(--muted)}
+    .routes{display:grid;gap:12px}.route{background:var(--panel);border:2px solid transparent;border-radius:16px;padding:15px;box-shadow:0 3px 14px #0f172a0c;transition:.2s}
+    .route.chosen{border-color:var(--accent);box-shadow:0 5px 18px #2563eb22}.route.disabled{opacity:.66}
+    .routehead{display:flex;justify-content:space-between;gap:10px}.rname{font-weight:750}.rpath{font-size:.8rem;color:var(--muted);margin-top:3px}
+    .time{font-size:1.45rem;font-weight:800;white-space:nowrap}.time span{font-size:.72rem;font-weight:600;color:var(--muted)}
+    .bar{height:7px;background:#e2e8f0;border-radius:999px;margin:13px 0 10px;overflow:hidden}.fill{height:100%;border-radius:999px;background:var(--accent);transition:width .35s}
+    .meta{display:flex;justify-content:space-between;align-items:center;gap:8px}.traffic{font-size:.8rem;font-weight:700}.light{color:var(--ok)}.moderate{color:var(--warn)}.heavy,.severe,.closed{color:var(--bad)}
+    button{border:0;border-radius:10px;padding:10px 14px;font-weight:700;background:var(--accent);color:white;cursor:pointer}
+    button:disabled{background:#94a3b8;cursor:not-allowed}.secondary{background:#e2e8f0;color:#0f172a}
+    footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:9px 14px calc(9px + env(safe-area-inset-bottom));display:flex;justify-content:center}
+    footer>div{width:min(680px,100%);display:flex;gap:8px}.grow{flex:1}
+    dialog{border:0;border-radius:18px;padding:0;max-width:520px;width:calc(100% - 28px);box-shadow:0 20px 70px #0005}dialog::backdrop{background:#0f172ab3}
+    .modal{padding:20px}.modal h2{margin:0 0 6px}.field{margin:12px 0}.field label{display:block;font-size:.8rem;font-weight:700;margin-bottom:5px}.field input{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:10px;font-size:1rem}
+    .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}.error{color:var(--bad);font-size:.82rem;margin-top:8px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="toprow"><div><h1>Thane → Powai</h1><div class="sub">Collective Route Choice Challenge</div></div><div id="conn" class="pill">Not connected</div></div>
+</header>
+<main>
+  <div class="notice"><strong id="headline">Choose the route you believe will be fastest.</strong><div id="instruction" class="small">Your collective decisions will change congestion for everyone.</div></div>
+  <div id="selectedBox" class="selected" hidden><strong>Your selection: <span id="selectedName"></span></strong><div class="small">You may change it while route selection is open.</div></div>
+  <section id="routes" class="routes"></section>
+</main>
+<footer><div><button id="settingsBtn" class="secondary">Settings</button><button id="refreshBtn" class="grow">Reconnect</button></div></footer>
+
+<dialog id="settingsDialog">
+  <form method="dialog" class="modal" id="settingsForm">
+    <h2>Join simulation</h2>
+    <div class="small">Enter the same connection details provided by your instructor.</div>
+    <div class="field"><label>Broker host</label><input id="host" value="mcdcc0c1.ala.asia-southeast1.emqxsl.com" required></div>
+    <div class="field"><label>Secure WebSocket port</label><input id="port" value="8084" inputmode="numeric" required></div>
+    <div class="field"><label>MQTT username</label><input id="username" autocomplete="username" required></div>
+    <div class="field"><label>MQTT password</label><input id="password" type="password" autocomplete="current-password" required></div>
+    <div class="field"><label>Class session code</label><input id="session" value="CLASS01" required></div>
+    <div class="field"><label>Your name or roll number</label><input id="studentName" required></div>
+    <div id="formError" class="error"></div>
+    <div class="actions"><button value="cancel" class="secondary">Cancel</button><button id="saveBtn" value="default">Save and connect</button></div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  const DEFAULT_ROUTES = [
+    {id:'R1', name:'EEH – JVLR', path:'Thane → Mulund → Eastern Express Highway → JVLR', travelTime:45, status:'Waiting'},
+    {id:'R2', name:'Mulund – Airoli', path:'Thane → Mulund → Airoli Bridge → Powai', travelTime:50, status:'Waiting'},
+    {id:'R3', name:'LBS – Vikhroli', path:'Thane → LBS Marg → Vikhroli → Powai', travelTime:55, status:'Waiting'},
+    {id:'R4', name:'Ghodbunder – WEH', path:'Thane → Ghodbunder → WEH → JVLR', travelTime:65, status:'Waiting'}
+  ];
+  const $ = id => document.getElementById(id);
+  let client = null, state = {routes:DEFAULT_ROUTES, open:true, revealCounts:false, round:1}, selectedRoute = localStorage.getItem('tp_selected_route') || '';
+  let studentId = localStorage.getItem('tp_student_id');
+  if (!studentId) { studentId = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)); localStorage.setItem('tp_student_id',studentId); }
+
+  function cfg(){ try{return JSON.parse(localStorage.getItem('tp_student_cfg'))||{}}catch{return{}} }
+  function saveCfg(v){localStorage.setItem('tp_student_cfg',JSON.stringify(v))}
+  function topic(kind){return `dcps/traffic/${cfg().session.trim().toUpperCase()}/${kind}`}
+  function statusClass(s=''){ return s.toLowerCase().replace(/\s+/g,'-') }
+  function render(){
+    $('routes').innerHTML = state.routes.map(r => {
+      const max=120, pct=Math.min(100,Math.max(8,(r.travelTime/max)*100));
+      const chosen=r.id===selectedRoute, closed=r.closed || r.status==='Closed';
+      const count = state.revealCounts && Number.isFinite(r.vehicles) ? `<span>${r.vehicles} travellers</span>` : '<span>Live estimate</span>';
+      return `<article class="route ${chosen?'chosen':''} ${!state.open?'disabled':''}">
+        <div class="routehead"><div><div class="rname">${r.name}</div><div class="rpath">${r.path}</div></div><div class="time">${closed?'—':Math.round(r.travelTime)} <span>${closed?'closed':'min'}</span></div></div>
+        <div class="bar"><div class="fill" style="width:${closed?100:pct}%"></div></div>
+        <div class="meta"><div class="traffic ${statusClass(r.status)}">${r.status}${r.incident?' · '+r.incident:''}<br><span class="small">${count}</span></div>
+        <button data-route="${r.id}" ${!state.open||closed?'disabled':''}>${chosen?'Selected':'Select'}</button></div>
+      </article>`;
+    }).join('');
+    document.querySelectorAll('[data-route]').forEach(b=>b.onclick=()=>selectRoute(b.dataset.route));
+    $('selectedBox').hidden=!selectedRoute;
+    const sr=state.routes.find(r=>r.id===selectedRoute); $('selectedName').textContent=sr?sr.name:selectedRoute;
+    $('headline').textContent = state.open ? `Round ${state.round || 1}: Choose your route` : `Round ${state.round || 1}: Selection closed`;
+    $('instruction').textContent = state.message || (state.open ? 'Travel estimates update as the class makes choices.' : 'Observe the final congestion created by the class.');
+  }
+  function selectRoute(routeId){
+    if(!client?.connected || !state.open) return;
+    selectedRoute=routeId; localStorage.setItem('tp_selected_route',routeId); render();
+    const c=cfg();
+    client.publish(topic('selection'), JSON.stringify({
+      studentId, studentName:c.studentName, routeId, timestamp:new Date().toISOString()
+    }), {qos:1});
+  }
+  function connect(){
+    const c=cfg();
+    if(!c.host||!c.port||!c.username||!c.password||!c.session||!c.studentName){openSettings();return}
+    if(client){try{client.end(true)}catch{}}
+    $('conn').textContent='Connecting…';
+    const url=`wss://${c.host}:${c.port}/mqtt`;
+    client=mqtt.connect(url,{username:c.username,password:c.password,clientId:`student_${studentId.replaceAll('-','').slice(0,18)}_${Date.now().toString(36)}`,clean:true,reconnectPeriod:2500,connectTimeout:12000,protocolVersion:4});
+    client.on('connect',()=>{ $('conn').textContent='Connected'; client.subscribe(topic('status'),{qos:1}); client.subscribe(topic('control'),{qos:1}); });
+    client.on('reconnect',()=>{$('conn').textContent='Reconnecting…'});
+    client.on('offline',()=>{$('conn').textContent='Offline'});
+    client.on('error',e=>{$('conn').textContent='Connection error'; console.error(e)});
+    client.on('message',(t,m)=>{
+      try{
+        const data=JSON.parse(m.toString());
+        if(t===topic('status')) {state=data; render()}
+        if(t===topic('control') && data.command==='clearSelection'){selectedRoute='';localStorage.removeItem('tp_selected_route');render()}
+      }catch(e){console.warn('Invalid message',e)}
+    });
+  }
+  function openSettings(){
+    const c=cfg(); ['host','port','username','password','session','studentName'].forEach(k=>{if(c[k])$(k).value=c[k]});
+    $('settingsDialog').showModal();
+  }
+  $('settingsForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    const c={host:$('host').value.trim(),port:$('port').value.trim(),username:$('username').value.trim(),password:$('password').value,session:$('session').value.trim().toUpperCase(),studentName:$('studentName').value.trim()};
+    if(Object.values(c).some(v=>!v)){$('formError').textContent='Please complete all fields.';return}
+    saveCfg(c); $('settingsDialog').close(); connect();
+  });
+  $('settingsBtn').onclick=openSettings; $('refreshBtn').onclick=connect;
+  render(); connect();
+})();
+</script>
+</body>
+</html>

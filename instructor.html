@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Instructor Console — Thane–Powai Traffic</title>
-  <script src="https://unpkg.com/mqtt@5.14.1/dist/mqtt.min.js"></script>
+  <script src="https://unpkg.com/mqtt@5.6.1/dist/mqtt.min.js"></script>
   <style>
     :root{--bg:#f1f5f9;--panel:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--accent:#2563eb;--ok:#15803d;--warn:#b45309;--bad:#b91c1c}
     *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
@@ -118,7 +118,7 @@
     const c=cfg(); if(!c.host||!c.port||!c.username||!c.password||!c.session){openSettings();return}
     if(client){try{client.end(true)}catch{}}
     $('conn').textContent='Connecting…';
-    client=mqtt.connect(`wss://${c.host}:${c.port}/`,{username:c.username,password:c.password,clientId:`instructor_${Date.now().toString(36)}`,clean:true,reconnectPeriod:2500,connectTimeout:12000,protocolVersion:4});
+    client=mqtt.connect(`wss://${c.host}:${c.port}/mqtt`,{username:c.username,password:c.password,clientId:`instructor_${Date.now().toString(36)}`,clean:true,reconnectPeriod:2500,connectTimeout:12000,protocolVersion:4});
     client.on('connect',()=>{$('conn').textContent='Connected';client.subscribe(topic('selection'),{qos:1});publishStatus()});
     client.on('reconnect',()=>{$('conn').textContent='Reconnecting…'});client.on('offline',()=>{$('conn').textContent='Offline'});client.on('error',e=>{$('conn').textContent='Connection error';console.error(e)});
     client.on('message',(t,m)=>{if(t!==topic('selection'))return;try{const d=JSON.parse(m.toString());if(d.studentId&&d.routeId){students[d.studentId]={...d,timestamp:d.timestamp||new Date().toISOString()};publishStatus()}}catch(e){console.warn(e)}});

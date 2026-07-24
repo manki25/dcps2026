@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#3b2417">
+  <title>MoonShot Café Smart Machine</title>
+  <script src="https://unpkg.com/mqtt@5.6.1/dist/mqtt.min.js"></script>
+  <style>
+    :root{
+      --bg:#f7f1ea;--panel:#fffaf5;--ink:#2b1b12;--muted:#7c675c;--line:#ead7c7;
+      --brown:#7c3f1d;--brown2:#a85d2b;--cream:#f4e3cf;--green:#2f855a;--amber:#b7791f;--red:#c53030;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:linear-gradient(#f9f4ef,#efe4d9);color:var(--ink);min-height:100vh}
+    header{background:#3b2417;color:#fff;padding:14px 16px;position:sticky;top:0;z-index:10}
+    .head{max-width:760px;margin:auto;display:flex;justify-content:space-between;align-items:center;gap:12px}
+    h1{font-size:1.08rem;margin:0}.sub{font-size:.76rem;color:#ead7c7;margin-top:3px}
+    .pill{font-size:.73rem;padding:6px 9px;border-radius:999px;background:#5b3824;white-space:nowrap}.pill.ok{background:#276749}.pill.bad{background:#9b2c2c}
+    main{max-width:760px;margin:auto;padding:14px 14px 94px}
+    .machine{background:linear-gradient(145deg,#fffaf5,#f4e3cf);border:1px solid var(--line);border-radius:24px;padding:16px;box-shadow:0 18px 45px #5b382422;margin-bottom:14px}
+    .screen{background:#2b1b12;color:#fef3c7;border-radius:15px;padding:14px;text-align:center}
+    .screen strong{font-size:1rem}.screen div{font-size:.8rem;color:#e7c9a8;margin-top:4px}
+    .spout{width:80px;height:34px;background:#4a2d1d;margin:0 auto;border-radius:0 0 12px 12px;position:relative}
+    .spout:after{content:"";position:absolute;left:34px;bottom:-20px;width:12px;height:22px;background:#6b4226;border-radius:0 0 6px 6px}
+    .cup{width:115px;height:75px;border:7px solid #fff;border-top:0;border-radius:0 0 25px 25px;margin:28px auto 5px;position:relative;background:linear-gradient(to top,#6f3c20 0 42%,#d8b99b 43% 48%,transparent 49%)}
+    .cup:after{content:"";position:absolute;right:-34px;top:17px;width:30px;height:34px;border:7px solid #fff;border-left:0;border-radius:0 18px 18px 0}
+    .section{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:15px;margin-bottom:13px}
+    .section h2{font-size:.96rem;margin:0 0 12px}
+    .recipes{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+    .recipe{border:2px solid transparent;background:#fff;border-radius:14px;padding:12px;cursor:pointer;box-shadow:0 4px 12px #5b382410}
+    .recipe.selected{border-color:var(--brown2);background:#fff7ed}.recipe.disabled{opacity:.48;cursor:not-allowed}
+    .recipe strong{display:block}.recipe span{font-size:.72rem;color:var(--muted)}
+    .ingredients{display:grid;gap:9px}.ing{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}
+    .ingTop{display:flex;justify-content:space-between;font-size:.8rem}.bar{height:9px;background:#eee2d7;border-radius:999px;overflow:hidden;margin-top:7px}.fill{height:100%;background:var(--brown2);transition:.3s}.low{background:var(--red)}
+    .summary{font-size:.82rem;color:var(--muted);margin-top:8px}
+    button{border:0;border-radius:11px;padding:11px 14px;font-weight:800;background:var(--brown2);color:white;cursor:pointer}
+    button:disabled{background:#a0aec0;cursor:not-allowed}.secondary{background:#6b7280}
+    .dispense{width:100%;font-size:1rem;padding:14px;margin-top:12px}
+    .statusBox{padding:10px;border-radius:10px;background:#fdf6ec;font-size:.82rem;margin-top:10px}
+    footer{position:fixed;bottom:0;left:0;right:0;background:#3b2417ee;padding:9px 14px calc(9px + env(safe-area-inset-bottom));backdrop-filter:blur(10px)}
+    footer>div{max-width:760px;margin:auto;display:flex;gap:8px}footer button:last-child{flex:1}
+    dialog{border:0;border-radius:18px;padding:0;width:min(520px,calc(100% - 26px));box-shadow:0 25px 80px #0006}dialog::backdrop{background:#2b1b12bb}.modal{padding:20px}.field{margin-bottom:11px}.field label{display:block;font-size:.78rem;font-weight:750;margin-bottom:5px}.field input{width:100%;padding:10px;border:1px solid #cbb8a8;border-radius:9px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+    @media(max-width:520px){.recipes{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="head">
+    <div><h1>☕ MoonShot Café Smart Machine</h1><div id="machineLabel" class="sub">Machine not configured</div></div>
+    <div id="conn" class="pill">Not connected</div>
+  </div>
+</header>
+
+<main>
+  <section class="machine">
+    <div class="screen"><strong id="screenTitle">Welcome to MoonShot Café</strong><div id="screenText">Select a coffee recipe below</div></div>
+    <div class="spout"></div>
+    <div class="cup"></div>
+  </section>
+
+  <section class="section">
+    <h2>Popular flavours</h2>
+    <div id="recipes" class="recipes"></div>
+    <div id="recipeSummary" class="summary">Select a recipe to view its ingredient usage.</div>
+    <button id="dispenseBtn" class="dispense" disabled>Dispense coffee</button>
+    <div id="actionStatus" class="statusBox">Ready.</div>
+  </section>
+
+  <section class="section">
+    <h2>Material remaining in this machine</h2>
+    <div id="ingredients" class="ingredients"></div>
+  </section>
+</main>
+
+<footer><div><button id="settingsBtn" class="secondary">Settings</button><button id="reconnectBtn">Reconnect</button></div></footer>
+
+<dialog id="settingsDialog">
+  <form id="settingsForm" class="modal">
+    <h2 style="margin-top:0">Machine setup</h2>
+    <div class="field"><label for="host">Broker host</label><input id="host" value="mcdcc0c1.ala.asia-southeast1.emqxsl.com" required></div>
+    <div class="field"><label for="port">Secure WebSocket port</label><input id="port" value="8084" required></div>
+    <div class="field"><label for="username">MQTT username</label><input id="username" required></div>
+    <div class="field"><label for="password">MQTT password</label><input id="password" type="password" required></div>
+    <div class="field"><label for="session">Class session code</label><input id="session" value="MOONSHOT01" required></div>
+    <div class="field"><label for="machineId">Unique machine ID</label><input id="machineId" placeholder="Example: MUM-001" required></div>
+    <div class="field"><label for="location">MoonShot Café outlet</label>
+      <select id="location" required style="width:100%;padding:10px;border:1px solid #cbb8a8;border-radius:9px;background:white">
+        <option value="">Select outlet</option>
+        <option>Powai</option>
+        <option>Thane West</option>
+        <option>Andheri</option>
+        <option>Dadar</option>
+        <option>Mira Road</option>
+      </select>
+    </div>
+    <div class="actions"><button type="button" id="cancelSettings" class="secondary">Cancel</button><button>Save and connect</button></div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  const defaultRecipes = {
+    espresso:{name:'Espresso',emoji:'☕',ingredients:{coffee:18,water:40,milk:0,vanilla:0,caramel:0,hazelnut:0}},
+    cappuccino:{name:'Cappuccino',emoji:'🥛',ingredients:{coffee:18,water:35,milk:120,vanilla:0,caramel:0,hazelnut:0}},
+    latte:{name:'Café Latte',emoji:'🌙',ingredients:{coffee:18,water:35,milk:180,vanilla:0,caramel:0,hazelnut:0}},
+    mocha:{name:'Mocha',emoji:'🍫',ingredients:{coffee:18,water:35,milk:150,vanilla:0,caramel:20,hazelnut:0}},
+    vanilla:{name:'Vanilla Latte',emoji:'🌼',ingredients:{coffee:18,water:35,milk:170,vanilla:15,caramel:0,hazelnut:0}},
+    caramel:{name:'Caramel Macchiato',emoji:'🍮',ingredients:{coffee:18,water:30,milk:160,vanilla:0,caramel:18,hazelnut:0}},
+    hazelnut:{name:'Hazelnut Latte',emoji:'🌰',ingredients:{coffee:18,water:35,milk:170,vanilla:0,caramel:0,hazelnut:15}}
+  };
+
+  const capacities = {coffee:1000,water:5000,milk:3000,vanilla:500,caramel:500,hazelnut:500};
+  let recipes = {...defaultRecipes};
+  let selected = '';
+  let client = null;
+  let inventory = loadInventory();
+  let dispenseCount = Number(localStorage.getItem('moonshot_dispense_count') || 0);
+
+  function cfg(){
+    try{return JSON.parse(localStorage.getItem('moonshot_machine_cfg')) || {}}
+    catch{return {}}
+  }
+  function saveCfg(c){localStorage.setItem('moonshot_machine_cfg',JSON.stringify(c))}
+  function topic(kind){return `moonshot/${cfg().session.trim().toUpperCase()}/${kind}`}
+  function machineTopic(kind){return `${topic('machines')}/${cfg().machineId}/${kind}`}
+
+  function loadInventory(){
+    try{
+      const v=JSON.parse(localStorage.getItem('moonshot_inventory'));
+      return v || {...capacities};
+    }catch{return {...capacities}}
+  }
+  function saveInventory(){localStorage.setItem('moonshot_inventory',JSON.stringify(inventory))}
+
+  function unit(k){return k==='coffee'?'g':'ml'}
+  function label(k){return ({coffee:'Coffee beans',water:'Water',milk:'Milk',vanilla:'Vanilla syrup',caramel:'Caramel syrup',hazelnut:'Hazelnut syrup'})[k]}
+
+  function render(){
+    const c=cfg();
+    $('machineLabel').textContent=c.machineId?`${c.machineId} · ${c.location}`:'Machine not configured';
+
+    $('recipes').innerHTML=Object.entries(recipes).map(([id,r])=>{
+      const available=canDispense(r);
+      return `<button class="recipe ${selected===id?'selected':''} ${available?'':'disabled'}" data-id="${id}" ${available?'':'disabled'}>
+        <strong>${r.emoji||'☕'} ${r.name}</strong>
+        <span>${recipeLine(r)}</span>
+      </button>`
+    }).join('');
+
+    document.querySelectorAll('[data-id]').forEach(b=>b.addEventListener('click',()=>{selected=b.dataset.id;render()}));
+
+    if(selected && recipes[selected]){
+      const r=recipes[selected];
+      $('recipeSummary').textContent=`Uses: ${recipeLine(r)}`;
+      $('dispenseBtn').disabled=!canDispense(r) || !client?.connected;
+      $('screenTitle').textContent=r.name;
+      $('screenText').textContent=canDispense(r)?'Ready to dispense':'Insufficient material';
+    }else{
+      $('dispenseBtn').disabled=true;
+      $('screenTitle').textContent='Welcome to MoonShot Café';
+      $('screenText').textContent='Select a coffee recipe below';
+    }
+
+    $('ingredients').innerHTML=Object.keys(capacities).map(k=>{
+      const pct=Math.max(0,Math.min(100,inventory[k]/capacities[k]*100));
+      return `<div class="ing"><div class="ingTop"><strong>${label(k)}</strong><span>${Math.round(inventory[k])} / ${capacities[k]} ${unit(k)}</span></div>
+      <div class="bar"><div class="fill ${pct<20?'low':''}" style="width:${pct}%"></div></div></div>`
+    }).join('');
+  }
+
+  function recipeLine(r){
+    return Object.entries(r.ingredients).filter(([,v])=>v>0).map(([k,v])=>`${label(k)} ${v}${unit(k)}`).join(' · ');
+  }
+
+  function canDispense(r){
+    return Object.entries(r.ingredients).every(([k,v])=>(inventory[k]||0)>=v);
+  }
+
+  function publishState(){
+    if(!client?.connected)return;
+    const c=cfg();
+    client.publish(machineTopic('state'),JSON.stringify({
+      machineId:c.machineId,location:c.location,online:true,inventory,capacities,dispenseCount,
+      availableRecipes:Object.keys(recipes),timestamp:new Date().toISOString()
+    }),{qos:1,retain:true});
+  }
+
+  function dispense(){
+    if(!selected || !recipes[selected] || !canDispense(recipes[selected]))return;
+    const r=recipes[selected];
+    Object.entries(r.ingredients).forEach(([k,v])=>inventory[k]-=v);
+    dispenseCount++;
+    saveInventory();
+    localStorage.setItem('moonshot_dispense_count',dispenseCount);
+
+    const c=cfg();
+    const event={
+      machineId:c.machineId,location:c.location,recipeId:selected,recipeName:r.name,
+      ingredientsUsed:r.ingredients,inventoryAfter:{...inventory},dispenseCount,timestamp:new Date().toISOString()
+    };
+
+    client.publish(topic('dispense'),JSON.stringify(event),{qos:1});
+    publishState();
+
+    $('actionStatus').textContent=`Dispensed ${r.name}. Total coffees from this machine: ${dispenseCount}.`;
+    $('screenTitle').textContent='Enjoy your coffee!';
+    $('screenText').textContent=`${r.name} dispensed successfully`;
+    render();
+  }
+
+  function applyRecipePush(data){
+    if(data.command==='replaceRecipes' && data.recipes){
+      recipes=data.recipes;
+      selected='';
+      $('actionStatus').textContent=`New recipe menu received from MoonShot Café admin at ${new Date().toLocaleTimeString()}.`;
+      render();
+      publishState();
+    }
+    if(data.command==='refill' && data.inventory){
+      Object.keys(capacities).forEach(k=>{
+        if(data.inventory[k]!==undefined) inventory[k]=Math.min(capacities[k],Number(data.inventory[k]));
+      });
+      saveInventory();
+      $('actionStatus').textContent='Machine inventory refilled remotely by admin.';
+      render();publishState();
+    }
+    if(data.command==='resetInventory'){
+      inventory={...capacities};saveInventory();render();publishState();
+    }
+  }
+
+  function openSettings(){
+    const c=cfg();
+    ['host','port','username','password','session','machineId','location'].forEach(k=>{if(c[k])$(k).value=c[k]});
+    $('settingsDialog').showModal();
+  }
+
+  function connect(){
+    const c=cfg();
+    if(!c.host||!c.port||!c.username||!c.password||!c.session||!c.machineId||!c.location){openSettings();return}
+    if(client){try{client.end(true)}catch{}}
+
+    $('conn').textContent='Connecting…';$('conn').className='pill';
+    client=mqtt.connect(`wss://${c.host}:${c.port}/mqtt`,{
+      username:c.username,password:c.password,
+      clientId:`machine_${c.machineId}_${Date.now().toString(36)}`.replace(/[^a-zA-Z0-9_-]/g,''),
+      clean:true,reconnectPeriod:1500,connectTimeout:30000,
+      will:{topic:machineTopic('state'),payload:JSON.stringify({machineId:c.machineId,location:c.location,online:false,timestamp:new Date().toISOString()}),qos:1,retain:true}
+    });
+
+    client.on('connect',()=>{
+      $('conn').textContent='Connected';$('conn').className='pill ok';
+      client.subscribe(topic('recipes'),{qos:1});
+      client.subscribe(machineTopic('commands'),{qos:1});
+      publishState();render();
+    });
+    client.on('reconnect',()=>{$('conn').textContent='Reconnecting…'});
+    client.on('offline',()=>{$('conn').textContent='Offline';$('conn').className='pill bad'});
+    client.on('error',e=>{console.error(e);$('conn').textContent='Connection error';$('conn').className='pill bad'});
+    client.on('message',(t,m)=>{
+      try{const d=JSON.parse(m.toString());if(t===topic('recipes')||t===machineTopic('commands'))applyRecipePush(d)}
+      catch(e){console.warn(e)}
+    });
+  }
+
+  $('dispenseBtn').addEventListener('click',dispense);
+  $('settingsBtn').addEventListener('click',openSettings);
+  $('reconnectBtn').addEventListener('click',connect);
+  $('cancelSettings').addEventListener('click',()=>$('settingsDialog').close());
+  $('settingsForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    saveCfg({
+      host:$('host').value.trim(),port:$('port').value.trim(),username:$('username').value.trim(),
+      password:$('password').value,session:$('session').value.trim().toUpperCase(),
+      machineId:$('machineId').value.trim(),location:$('location').value.trim()
+    });
+    $('settingsDialog').close();connect();
+  });
+
+  render();connect();
+})();
+</script>
+</body>
+</html>

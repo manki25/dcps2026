@@ -122,6 +122,7 @@
       <div id="explanation" class="small">The model estimates ingredient consumption per minute from recent dispense events and divides current stock by that rate.</div>
       <div class="controls">
         <button id="scanNow">Run prediction now</button>
+        <button id="resetAdminBtn" class="secondary">↺ Reset AI Admin</button>
         <button id="settingsBtn" class="secondary">Connection settings</button>
       </div>
     </section>
@@ -185,6 +186,7 @@
     line.textContent=`[${new Date().toLocaleTimeString()}] ${message}`;
     $('log').prepend(line);
   }
+  
   function openSettings(){
     const c=cfg();
     $('host').value=c.host||'mcdcc0c1.ala.asia-southeast1.emqxsl.com';
@@ -412,10 +414,51 @@
       }catch(e){console.warn(e)}
     });
   }
+  function resetAdmin() {
+  events = [];
+  machines = {};
+  risks = [];
 
+  dispatchQueue = [];
+  activeDispatch = null;
+
+  lockedOutlets.clear();
+
+  prevented = 0;
+  localStorage.removeItem("moonshot_ai_prevented");
+
+  $("machinesCount").textContent = "0";
+  $("riskCount").textContent = "0";
+  $("preventedCount").textContent = "0";
+  $("nextRisk").textContent = "—";
+
+  $("truck").style.left = "calc(100% - 38px)";
+  $("progressFill").style.width = "0%";
+
+  $("destination").textContent =
+    "AI logistics ready. No dispatch required.";
+
+  $("aiLine").textContent =
+    "AI reset complete. Waiting for fresh machine data…";
+
+  $("riskList").innerHTML =
+    '<div class="small">No predictions yet.</div>';
+
+  $("machineTable").innerHTML =
+    '<tr><td colspan="5">No predictions yet.</td></tr>';
+
+  $("outlets").innerHTML = "";
+
+  $("log").innerHTML = "";
+
+  log("AI Admin reset. Predictions, history and counters cleared.");
+
+  render([]);
+  }
   $('scanNow').addEventListener('click',()=>{log('Immediate AI prediction requested.');calculateRisks()});
   $('settingsBtn').addEventListener('click',openSettings);
   $('cancelSettings').addEventListener('click',()=>$('settingsDialog').close());
+  $("resetAdminBtn").addEventListener("click", resetAdmin);
   $('settingsForm').addEventListener('submit',e=>{
     e.preventDefault();
     localStorage.setItem('moonshot_admin_cfg',JSON.stringify({

@@ -105,7 +105,7 @@
     if(!c.host||!c.port||!c.username||!c.password||!c.session||!c.studentName){openSettings();return}
     if(client){try{client.end(true)}catch{}}
     $('conn').textContent='Connecting…';
-    const url=`wss://${c.host}:${c.port}/mqtt`;
+    const url=`wss://${c.host}:${c.port}/`;
     client=mqtt.connect(url,{username:c.username,password:c.password,clientId:`student_${studentId.replaceAll('-','').slice(0,18)}_${Date.now().toString(36)}`,clean:true,reconnectPeriod:2500,connectTimeout:12000,protocolVersion:4});
     client.on('connect',()=>{ $('conn').textContent='Connected'; client.subscribe(topic('status'),{qos:1}); client.subscribe(topic('control'),{qos:1}); });
     client.on('reconnect',()=>{$('conn').textContent='Reconnecting…'});

@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MoonShot Café Fleet Simulator V2</title>
+  <script src="https://unpkg.com/mqtt@5.6.1/dist/mqtt.min.js"></script>
+  <style>
+    :root{
+      --bg:#eef2f6;--panel:#fff;--ink:#172033;--muted:#657185;--line:#dce3eb;
+      --navy:#111827;--blue:#2563eb;--green:#16a34a;--amber:#d97706;--red:#dc2626;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    header{background:var(--navy);color:white;padding:15px 18px;position:sticky;top:0;z-index:10}
+    .head{max-width:1180px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{font-size:1.15rem;margin:0}.sub{font-size:.75rem;color:#b8c4d2;margin-top:3px}
+    .status{font-size:.75rem;padding:6px 10px;border-radius:999px;background:#374151}.status.ok{background:#166534}
+    main{max-width:1180px;margin:auto;padding:16px}
+    .toolbar,.panel{background:#fff;border:1px solid var(--line);border-radius:17px;padding:14px}
+    .toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+    button{border:0;border-radius:9px;padding:9px 12px;background:var(--blue);color:#fff;font-weight:750;cursor:pointer}
+    button.secondary{background:#64748b}button.danger{background:var(--red)}button:disabled{opacity:.5;cursor:not-allowed}
+    .metricGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+    .metric{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
+    .metric strong{display:block;font-size:1.4rem}.metric span{font-size:.73rem;color:var(--muted)}
+    .locations{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+    .location{background:#fff;border:1px solid var(--line);border-radius:16px;padding:13px}
+    .location h2{font-size:.96rem;margin:0}.small{font-size:.72rem;color:var(--muted)}
+    .rateBox{margin-top:12px;background:#f8fafc;border-radius:11px;padding:9px}
+    input[type=range]{width:100%}
+    .rateReadout{display:flex;justify-content:space-between;font-size:.75rem;font-weight:750}
+    .machineList{display:grid;gap:6px;margin-top:10px}
+    .machine{border:1px solid var(--line);border-radius:10px;padding:8px;font-size:.73rem}
+    .machineTop{display:flex;justify-content:space-between;gap:6px}
+    .good{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
+    .bar{height:7px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:5px}
+    .fill{height:100%;background:var(--green)}
+    .fill.warn{background:var(--amber)}.fill.bad{background:var(--red)}
+    .log{height:190px;overflow:auto;background:#111827;color:#d1fae5;border-radius:12px;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px;margin-top:14px}
+    dialog{border:0;border-radius:17px;padding:0;width:min(520px,calc(100% - 28px));box-shadow:0 25px 80px #0007}
+    dialog::backdrop{background:#111827bb}.modal{padding:20px}.field{margin-bottom:10px}
+    .field label{display:block;font-size:.76rem;font-weight:750;margin-bottom:4px}
+    .field input,.field select{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:9px}
+    .actions{display:flex;justify-content:flex-end;gap:8px}
+    table{width:100%;border-collapse:collapse;font-size:.76rem}th,td{text-align:left;padding:7px;border-bottom:1px solid var(--line)}
+    th{color:var(--muted)}
+    @media(max-width:1000px){.locations{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:700px){.locations,.grid{grid-template-columns:1fr}.metricGrid{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="head">
+    <div>
+      <h1>☕ MoonShot Café Fleet Simulator</h1>
+      <div class="sub">Five outlets · Adjustable coffee demand · Admin comparison laboratory</div>
+    </div>
+    <div id="connStatus" class="status">Not connected</div>
+  </div>
+</header>
+
+<main>
+  <section class="toolbar">
+    <button id="startBtn">▶ Start simulation</button>
+    <button id="pauseBtn" class="secondary">⏸ Pause</button>
+    <button id="resetBtn" class="danger">↺ Reset fleet</button>
+    <button id="settingsBtn" class="secondary">Connection settings</button>
+    <span id="runState" class="small">Simulation stopped</span>
+  </section>
+
+  <section class="metricGrid">
+    <div class="metric"><strong id="totalDispensed">0</strong><span>Total coffees dispensed</span></div>
+    <div class="metric"><strong id="activeMachines">25</strong><span>Simulated machines</span></div>
+    <div class="metric"><strong id="disruptions">0</strong><span>Disruption episodes</span></div>
+    <div class="metric"><strong id="disruptionTime">00:00</strong><span>Cumulative disruption time</span></div>
+  </section>
+
+  <section id="locations" class="locations"></section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2 style="font-size:.98rem;margin:0 0 10px">Outlet comparison</h2>
+      <div style="overflow:auto">
+        <table>
+          <thead><tr><th>Outlet</th><th>Rate</th><th>Dispensed</th><th>Disruptions</th><th>Disruption time</th><th>Status</th></tr></thead>
+          <tbody id="comparisonBody"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <h2 style="font-size:.98rem;margin:0 0 10px">Simulator activity</h2>
+      <div id="log" class="log"></div>
+    </section>
+  </div>
+</main>
+
+<dialog id="settingsDialog">
+  <div class="modal">
+    <h2>MQTT connection</h2>
+    <form id="settingsForm">
+      <div class="field"><label for="host">Host</label><input id="host" required></div>
+      <div class="field"><label for="port">Secure WebSocket port</label><input id="port" required></div>
+      <div class="field"><label for="username">Username</label><input id="username" required></div>
+      <div class="field"><label for="password">Password</label><input id="password" type="password" required></div>
+      <div class="field"><label for="session">Class session code</label><input id="session" required></div>
+      <div class="actions"><button type="button" id="cancelSettings" class="secondary">Cancel</button><button type="submit">Save and connect</button></div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+(()=>{
+  const $=id=>document.getElementById(id);
+
+  const outletConfig=[
+    {name:'Powai',prefix:'POW'},
+    {name:'Thane West',prefix:'THN'},
+    {name:'Andheri',prefix:'AND'},
+    {name:'Dadar',prefix:'DAD'},
+    {name:'Mira Road',prefix:'MIR'}
+  ];
+
+  const recipes={
+    espresso:{name:'Espresso',emoji:'☕',ingredients:{coffee:18,water:40,milk:0,vanilla:0,caramel:0,hazelnut:0}},
+    cappuccino:{name:'Cappuccino',emoji:'🥛',ingredients:{coffee:18,water:35,milk:120,vanilla:0,caramel:0,hazelnut:0}},
+    latte:{name:'Latte',emoji:'☕',ingredients:{coffee:18,water:35,milk:180,vanilla:0,caramel:0,hazelnut:0}},
+    mocha:{name:'Mocha',emoji:'🍫',ingredients:{coffee:18,water:35,milk:150,vanilla:20,caramel:0,hazelnut:0}},
+    vanillaLatte:{name:'Vanilla Latte',emoji:'🌼',ingredients:{coffee:18,water:35,milk:170,vanilla:25,caramel:0,hazelnut:0}},
+    caramelMacchiato:{name:'Caramel Macchiato',emoji:'🍮',ingredients:{coffee:18,water:35,milk:160,vanilla:0,caramel:25,hazelnut:0}},
+    hazelnutLatte:{name:'Hazelnut Latte',emoji:'🌰',ingredients:{coffee:18,water:35,milk:170,vanilla:0,caramel:0,hazelnut:25}}
+  };
+
+  const recipeWeights=[
+    ['espresso',.14],['cappuccino',.16],['latte',.23],['mocha',.12],
+    ['vanillaLatte',.12],['caramelMacchiato',.13],['hazelnutLatte',.10]
+  ];
+
+  const capacities={coffee:1000,water:5000,milk:3000,vanilla:500,caramel:500,hazelnut:500};
+  const machinesPerOutlet=5;
+
+  let client=null;
+  let running=false;
+  let scheduler=null;
+  let lastTick=performance.now();
+  let totalDispensed=0;
+  let totalAttempts=0;
+  let totalDisruptions=0;
+
+  const outlets={};
+  outletConfig.forEach((o,index)=>{
+    outlets[o.name]={
+      ...o,
+      rate:[0.5,1,1.5,2,2.5][index],
+      accumulator:0,
+      dispensed:0,
+      attempts:0,
+      disruptions:0,
+      failedOrders:0,
+      disruptionActive:false,
+      disruptionStartedAt:null,
+      cumulativeDisruptionMs:0,
+      machines:Array.from({length:machinesPerOutlet},(_,i)=>createMachine(o,i+1))
+    };
+  });
+
+  function createMachine(outlet,n){
+    return {
+      machineId:`${outlet.prefix}-${String(n).padStart(2,'0')}`,
+      location:outlet.name,
+      online:true,
+      inventory:{...capacities},
+      dispensed:0,
+      failures:0
+    };
+  }
+
+  function cfg(){
+    try{return JSON.parse(localStorage.getItem('moonshot_admin_cfg'))||{}}
+    catch{return{}}
+  }
+
+  function topic(kind){
+    return `moonshot/${(cfg().session||'').trim().toUpperCase()}/${kind}`;
+  }
+
+  function log(message){
+    const line=document.createElement('div');
+    line.textContent=`[${new Date().toLocaleTimeString()}] ${message}`;
+    $('log').prepend(line);
+  }
+
+  function chooseRecipe(){
+    const r=Math.random();
+    let sum=0;
+    for(const [id,w] of recipeWeights){
+      sum+=w;
+      if(r<=sum) return {id,...recipes[id]};
+    }
+    return {id:'latte',...recipes.latte};
+  }
+
+  function canMake(machine,recipe){
+    return Object.entries(recipe.ingredients).every(
+      ([k,v])=>Number(machine.inventory[k]||0)>=v
+    );
+  }
+
+  function chooseMachine(outlet,recipe){
+    const capable=outlet.machines.filter(m=>m.online && canMake(m,recipe));
+    if(!capable.length) return null;
+    capable.sort((a,b)=>b.inventory.milk-a.inventory.milk);
+    return capable[Math.floor(Math.random()*Math.min(2,capable.length))];
+  }
+
+  function publishState(machine){
+    if(!client?.connected) return;
+    client.publish(
+      `${topic('machines')}/${machine.machineId}/state`,
+      JSON.stringify({
+        machineId:machine.machineId,
+        location:machine.location,
+        online:machine.online,
+        inventory:machine.inventory,
+        dispensed:machine.dispensed,
+        timestamp:new Date().toISOString()
+      }),
+      {qos:1,retain:true}
+    );
+  }
+
+  function formatDuration(ms){
+    const totalSeconds=Math.max(0,Math.floor(ms/1000));
+    const hours=Math.floor(totalSeconds/3600);
+    const minutes=Math.floor((totalSeconds%3600)/60);
+    const seconds=totalSeconds%60;
+    return hours>0
+      ? `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`
+      : `${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+  }
+
+  function currentDisruptionMs(outlet){
+    return outlet.cumulativeDisruptionMs +
+      (outlet.disruptionActive && outlet.disruptionStartedAt
+        ? Date.now()-outlet.disruptionStartedAt
+        : 0);
+  }
+
+  function totalDisruptionMs(){
+    return Object.values(outlets).reduce(
+      (sum,outlet)=>sum+currentDisruptionMs(outlet),0
+    );
+  }
+
+  function outletCanServeFullMenu(outlet){
+    return Object.values(recipes).every(recipe=>
+      outlet.machines.some(machine=>machine.online && canMake(machine,recipe))
+    );
+  }
+
+  function beginDisruption(outlet,recipeName){
+    outlet.failedOrders++;
+
+    if(outlet.disruptionActive) return;
+
+    outlet.disruptionActive=true;
+    outlet.disruptionStartedAt=Date.now();
+    outlet.disruptions++;
+    totalDisruptions++;
+
+    log(
+      `DISRUPTION STARTED at ${outlet.name}: ${recipeName} cannot be served.`
+    );
+  }
+
+  function endDisruption(outlet,reason='menu capability restored'){
+    if(!outlet.disruptionActive || !outlet.disruptionStartedAt) return;
+
+    const duration=Date.now()-outlet.disruptionStartedAt;
+    outlet.cumulativeDisruptionMs+=duration;
+    outlet.disruptionActive=false;
+    outlet.disruptionStartedAt=null;
+
+    log(
+      `DISRUPTION ENDED at ${outlet.name} after ${formatDuration(duration)}; ${reason}.`
+    );
+  }
+
+  function dispenseAt(outlet){
+    const recipe=chooseRecipe();
+    outlet.attempts++;
+    totalAttempts++;
+
+    const machine=chooseMachine(outlet,recipe);
+    if(!machine){
+      beginDisruption(outlet,recipe.name);
+      render();
+      return;
+    }
+
+    Object.entries(recipe.ingredients).forEach(([k,v])=>{
+      machine.inventory[k]=Math.max(0,Number(machine.inventory[k]||0)-v);
+    });
+
+    machine.dispensed++;
+    outlet.dispensed++;
+    totalDispensed++;
+
+    const event={
+      machineId:machine.machineId,
+      location:machine.location,
+      recipeId:recipe.id,
+      recipeName:recipe.name,
+      ingredientsUsed:recipe.ingredients,
+      timestamp:new Date().toISOString()
+    };
+
+    if(client?.connected){
+      client.publish(topic('dispense'),JSON.stringify(event),{qos:1});
+      publishState(machine);
+    }
+
+    if(totalDispensed%10===0) log(`${totalDispensed} coffees dispensed. Fleet simulation running.`);
+  }
+
+  function simulationTick(now){
+    if(!running) return;
+    const elapsed=Math.min(1,(now-lastTick)/1000);
+    lastTick=now;
+
+    Object.values(outlets).forEach(outlet=>{
+      outlet.accumulator+=outlet.rate*elapsed;
+      while(outlet.accumulator>=1){
+        dispenseAt(outlet);
+        outlet.accumulator-=1;
+      }
+    });
+
+    render();
+    scheduler=requestAnimationFrame(simulationTick);
+  }
+
+  function start(){
+    if(running) return;
+    if(!client?.connected){openSettings();return}
+    running=true;
+    lastTick=performance.now();
+    scheduler=requestAnimationFrame(simulationTick);
+    $('runState').textContent='Simulation running';
+    log('Simulation started.');
+  }
+
+  function pause(){
+    running=false;
+    if(scheduler) cancelAnimationFrame(scheduler);
+    $('runState').textContent='Simulation paused';
+    log('Simulation paused.');
+  }
+
+  function resetFleet(){
+    pause();
+    totalDispensed=0;
+    totalAttempts=0;
+    totalDisruptions=0;
+
+    Object.values(outlets).forEach(outlet=>{
+      outlet.accumulator=0;
+      outlet.dispensed=0;
+      outlet.attempts=0;
+      outlet.disruptions=0;
+      outlet.failedOrders=0;
+      outlet.disruptionActive=false;
+      outlet.disruptionStartedAt=null;
+      outlet.cumulativeDisruptionMs=0;
+      outlet.machines=Array.from(
+        {length:machinesPerOutlet},
+        (_,i)=>createMachine(outlet,i+1)
+      );
+      outlet.machines.forEach(publishState);
+    });
+
+    log('Fleet reset to full inventory.');
+    render();
+  }
+
+  function inventoryPercent(machine){
+    const percentages=Object.keys(capacities).map(k=>
+      (Number(machine.inventory[k]||0)/capacities[k])*100
+    );
+    return Math.max(0,Math.min(...percentages));
+  }
+
+  function render(){
+    $('totalDispensed').textContent=totalDispensed;
+    $('activeMachines').textContent=Object.values(outlets).reduce((s,o)=>s+o.machines.length,0);
+    $('disruptions').textContent=totalDisruptions;
+    $('disruptionTime').textContent=formatDuration(totalDisruptionMs());
+
+    $('locations').innerHTML=outletConfig.map(({name})=>{
+      const outlet=outlets[name];
+      const machines=outlet.machines.map(machine=>{
+        const pct=inventoryPercent(machine);
+        const cls=pct<15?'bad':pct<35?'warn':'';
+        return `
+          <div class="machine">
+            <div class="machineTop">
+              <strong>${machine.machineId}</strong>
+              <span class="${cls||'good'}">${Math.round(pct)}% capacity</span>
+            </div>
+            <div class="bar"><div class="fill ${cls}" style="width:${pct}%"></div></div>
+            <div class="small">${machine.dispensed} coffees dispensed</div>
+          </div>`;
+      }).join('');
+
+      return `
+        <article class="location">
+          <h2>📍 ${name}</h2>
+          <div class="small">${machinesPerOutlet} simulated coffee machines</div>
+          <div style="margin-top:7px;font-size:.75rem">
+            <strong class="${outlet.disruptionActive?'bad':'good'}">
+              ${outlet.disruptionActive?'⚠ Disrupted':'✓ Operational'}
+            </strong>
+            · ${outlet.disruptions} disruption${outlet.disruptions===1?'':'s'}
+            · ${formatDuration(currentDisruptionMs(outlet))}
+          </div>
+          <div class="rateBox">
+            <div class="rateReadout">
+              <span>Demand rate</span>
+              <span id="rateLabel-${outlet.prefix}">${outlet.rate.toFixed(1)} coffees/sec</span>
+            </div>
+            <input class="rateSlider" data-location="${name}" type="range" min="0" max="5" step="0.1" value="${outlet.rate}">
+          </div>
+          <div class="machineList">${machines}</div>
+        </article>`;
+    }).join('');
+
+    document.querySelectorAll('.rateSlider').forEach(slider=>{
+      slider.addEventListener('input',e=>{
+        const outlet=outlets[e.target.dataset.location];
+        outlet.rate=Number(e.target.value);
+        document.getElementById(`rateLabel-${outlet.prefix}`).textContent=
+          `${outlet.rate.toFixed(1)} coffees/sec`;
+      });
+    });
+
+    $('comparisonBody').innerHTML=outletConfig.map(({name})=>{
+      const o=outlets[name];
+      return `<tr>
+        <td>${name}</td>
+        <td>${o.rate.toFixed(1)}/sec</td>
+        <td>${o.dispensed}</td>
+        <td>${o.disruptions}</td>
+        <td>${formatDuration(currentDisruptionMs(o))}</td>
+        <td class="${o.disruptionActive?'bad':'good'}">${o.disruptionActive?'Disrupted':'Operational'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function handleCommand(topicName,payload){
+    const match=topicName.match(/\/machines\/([^/]+)\/commands$/);
+    if(!match) return;
+    const machineId=match[1];
+
+    Object.values(outlets).forEach(outlet=>{
+      const machine=outlet.machines.find(m=>m.machineId===machineId);
+      if(!machine) return;
+
+      if(payload.command==='resetInventory'){
+        machine.inventory={...capacities};
+        publishState(machine);
+        log(`${machineId} replenished by ${payload.source||'admin'}.`);
+
+        if(outlet.disruptionActive && outletCanServeFullMenu(outlet)){
+          endDisruption(outlet,'replenishment restored full menu availability');
+        }
+      }
+    });
+
+    render();
+  }
+
+  function connect(){
+    const c=cfg();
+    if(!c.host||!c.port||!c.username||!c.password||!c.session){openSettings();return}
+    if(client){try{client.end(true)}catch{}}
+
+    $('connStatus').textContent='Connecting…';
+    client=mqtt.connect(`wss://${c.host}:${c.port}/mqtt`,{
+      username:c.username,
+      password:c.password,
+      clientId:`moonshot_sim_${Date.now().toString(36)}`,
+      clean:true,
+      reconnectPeriod:1500,
+      connectTimeout:30000
+    });
+
+    client.on('connect',()=>{
+      $('connStatus').textContent='Connected';
+      $('connStatus').className='status ok';
+      client.subscribe(`${topic('machines')}/+/commands`,{qos:1});
+      Object.values(outlets).forEach(o=>o.machines.forEach(publishState));
+      log('Simulator connected and published 25 machine states.');
+    });
+
+    client.on('reconnect',()=>{$('connStatus').textContent='Reconnecting…';$('connStatus').className='status'});
+    client.on('offline',()=>{$('connStatus').textContent='Offline';$('connStatus').className='status'});
+    client.on('error',()=>{$('connStatus').textContent='Connection error';$('connStatus').className='status'});
+
+    client.on('message',(t,m)=>{
+      try{handleCommand(t,JSON.parse(m.toString()))}
+      catch(e){console.warn(e)}
+    });
+  }
+
+  function openSettings(){
+    const c=cfg();
+    $('host').value=c.host||'mcdcc0c1.ala.asia-southeast1.emqxsl.com';
+    $('port').value=c.port||'8084';
+    $('username').value=c.username||'';
+    $('password').value=c.password||'';
+    $('session').value=c.session||'';
+    $('settingsDialog').showModal();
+  }
+
+  $('startBtn').addEventListener('click',start);
+  $('pauseBtn').addEventListener('click',pause);
+  $('resetBtn').addEventListener('click',resetFleet);
+  $('settingsBtn').addEventListener('click',openSettings);
+  $('cancelSettings').addEventListener('click',()=>$('settingsDialog').close());
+
+  $('settingsForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    localStorage.setItem('moonshot_admin_cfg',JSON.stringify({
+      host:$('host').value.trim(),
+      port:$('port').value.trim(),
+      username:$('username').value.trim(),
+      password:$('password').value,
+      session:$('session').value.trim().toUpperCase()
+    }));
+    $('settingsDialog').close();
+    connect();
+  });
+
+  setInterval(render,250);
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>

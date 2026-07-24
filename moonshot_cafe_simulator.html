@@ -358,7 +358,7 @@
     log('Simulation paused.');
   }
 
-  function resetFleet(){
+  function resetFleet_(){
     pause();
     totalDispensed=0;
     totalAttempts=0;
@@ -383,6 +383,41 @@
     log('Fleet reset to full inventory.');
     render();
   }
+
+  function resetFleet() {
+  pause();
+
+  totalDispensed = 0;
+  totalAttempts = 0;
+  totalDisruptions = 0;
+
+  Object.values(outlets).forEach(outlet => {
+    outlet.accumulator = 0;
+    outlet.dispensed = 0;
+    outlet.attempts = 0;
+    outlet.disruptions = 0;
+    outlet.failedOrders = 0;
+
+    outlet.disruptionActive = false;
+    outlet.disruptionStartedAt = null;
+    outlet.cumulativeDisruptionMs = 0;
+
+    outlet.machines = Array.from(
+      { length: machinesPerOutlet },
+      (_, i) => createMachine(outlet, i + 1)
+    );
+
+    outlet.machines.forEach(machine => {
+      publishState(machine);
+    });
+  });
+
+  $("log").innerHTML = "";
+  $("runState").textContent = "Fleet reset and ready";
+
+  log("All cafés reset. Inventory and disruption statistics cleared.");
+  render();
+}
 
   function inventoryPercent(machine){
     const percentages=Object.keys(capacities).map(k=>

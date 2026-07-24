@@ -118,7 +118,7 @@
     const c=cfg(); if(!c.host||!c.port||!c.username||!c.password||!c.session){openSettings();return}
     if(client){try{client.end(true)}catch{}}
     $('conn').textContent='Connecting…';
-    client=mqtt.connect(`wss://${c.host}:${c.port}/mqtt`,{username:c.username,password:c.password,clientId:`instructor_${Date.now().toString(36)}`,clean:true,reconnectPeriod:2500,connectTimeout:12000,protocolVersion:4});
+    client=mqtt.connect(`wss://${c.host}:${c.port}/`,{username:c.username,password:c.password,clientId:`instructor_${Date.now().toString(36)}`,clean:true,reconnectPeriod:2500,connectTimeout:12000,protocolVersion:4});
     client.on('connect',()=>{$('conn').textContent='Connected';client.subscribe(topic('selection'),{qos:1});publishStatus()});
     client.on('reconnect',()=>{$('conn').textContent='Reconnecting…'});client.on('offline',()=>{$('conn').textContent='Offline'});client.on('error',e=>{$('conn').textContent='Connection error';console.error(e)});
     client.on('message',(t,m)=>{if(t!==topic('selection'))return;try{const d=JSON.parse(m.toString());if(d.studentId&&d.routeId){students[d.studentId]={...d,timestamp:d.timestamp||new Date().toISOString()};publishStatus()}}catch(e){console.warn(e)}});

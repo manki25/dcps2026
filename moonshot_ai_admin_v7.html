@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MoonShot AI Admin V7</title>
+  <script src="https://unpkg.com/mqtt@5.6.1/dist/mqtt.min.js"></script>
+  <style>
+    :root{
+      --bg:#eef1f5;--panel:#fff;--ink:#172033;--muted:#687386;--line:#dfe5ec;
+      --navy:#111827;--blue:#2563eb;--cyan:#06b6d4;--green:#16a34a;
+      --amber:#d97706;--red:#dc2626;--purple:#7c3aed;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    header{background:var(--navy);color:#fff;padding:14px 18px;position:sticky;top:0;z-index:10}
+    .head{max-width:1180px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{margin:0;font-size:1.15rem}.sub{font-size:.76rem;color:#b9c4d3;margin-top:3px}
+    .pill{padding:6px 10px;border-radius:999px;background:#374151;font-size:.74rem}.pill.ok{background:#166534}
+    main{max-width:1180px;margin:auto;padding:16px}
+    .hero{display:grid;grid-template-columns:310px 1fr;gap:16px;background:#101827;color:#fff;border-radius:20px;padding:18px;margin-bottom:14px;overflow:hidden}
+    .brainWrap{display:grid;place-items:center;min-height:180px;position:relative}
+    .brainHalo,.brainHalo:before,.brainHalo:after{position:absolute;border-radius:50%;border:1px solid #22d3ee66;content:""}
+    .brainHalo{width:154px;height:154px;animation:pulse 2s infinite}
+    .brainHalo:before{inset:16px;animation:pulse 2s .45s infinite}
+    .brainHalo:after{inset:34px;animation:pulse 2s .9s infinite}
+    .brain{font-size:5rem;filter:drop-shadow(0 0 18px #22d3ee);animation:brainBeat 1.5s infinite;z-index:2}
+    .brainColumn{display:flex;flex-direction:column;gap:10px}
+    .miniDispatch{background:#ffffff0c;border:1px solid #ffffff1f;border-radius:14px;padding:10px}
+    .miniDispatchTitle{font-size:.75rem;color:#c6d4e4;margin-bottom:7px}
+    .miniRoad{height:54px;position:relative;border-radius:10px;background:linear-gradient(#3f4b5a 0 30%,#292929 31% 71%,#3f4b5a 72%);overflow:hidden}
+    .miniRoad:after{content:"";position:absolute;left:0;right:0;top:50%;border-top:3px dashed #f7dfa0}
+    .miniTruck{position:absolute;z-index:2;left:calc(100% - 38px);top:11px;font-size:1.8rem;transition:left .035s linear}
+    .miniProgress{height:7px;background:#374151;border-radius:999px;overflow:hidden;margin-top:7px}
+    .miniProgressFill{height:100%;width:0;background:#22d3ee;transition:width .035s linear}
+    .miniDestination{font-size:.71rem;color:#dce8f6;margin-top:7px;min-height:31px}
+    @keyframes pulse{0%,100%{transform:scale(.9);opacity:.25}50%{transform:scale(1.12);opacity:1}}
+    @keyframes brainBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+    .heroText{display:flex;flex-direction:column;justify-content:center}
+    .heroText h2{margin:0 0 5px;font-size:1.3rem}.aiLine{color:#bfe9ff;font-size:.9rem;min-height:24px}
+    .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+    .metric{background:#ffffff12;border:1px solid #ffffff20;border-radius:13px;padding:11px}
+    .metric strong{display:block;font-size:1.35rem}.metric span{font-size:.72rem;color:#c9d4e2}
+    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:15px}
+    .panel h2{font-size:.98rem;margin:0 0 11px}
+    .riskList,.outlets{display:grid;gap:9px}
+    .risk{border:1px solid var(--line);border-left:5px solid var(--amber);border-radius:12px;padding:11px;background:#fff}
+    .risk.critical{border-left-color:var(--red)}.riskTop{display:flex;justify-content:space-between;gap:8px}
+    .badge{font-size:.7rem;font-weight:800;padding:4px 7px;border-radius:999px;background:#fff3cd;color:#854d0e}
+    .critical .badge{background:#fee2e2;color:#991b1b}
+    .why{font-size:.75rem;color:var(--muted);margin-top:6px}
+    .outlet{border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;grid-template-columns:1fr auto;gap:8px}
+    .small{font-size:.73rem;color:var(--muted)}
+    .good{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
+    .dispatch{background:#111827;color:#fff;border-radius:17px;padding:15px;margin-top:14px}
+    .road{height:72px;position:relative;border-radius:12px;background:linear-gradient(#3f4b5a 0 32%,#292929 33% 70%,#3f4b5a 71%);overflow:hidden;margin-top:10px}
+    .road:after{content:"";position:absolute;left:0;right:0;top:50%;border-top:3px dashed #f7dfa0}
+    .truck{position:absolute;z-index:2;left:calc(100% - 42px);top:19px;font-size:2.1rem;transition:left .08s linear}
+    .progress{height:10px;background:#374151;border-radius:999px;overflow:hidden;margin-top:9px}
+    .progressFill{height:100%;width:0;background:#22d3ee;transition:width .08s linear}
+    .destination{font-size:.8rem;color:#dce8f6;margin-top:8px}
+    .log{max-height:195px;overflow:auto;background:#111827;color:#d1fae5;border-radius:11px;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    button{border:0;border-radius:9px;padding:9px 11px;background:var(--blue);color:white;font-weight:750;cursor:pointer}.secondary{background:#64748b}
+    details{margin-top:14px}summary{cursor:pointer;font-weight:750}
+    table{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:9px}th,td{padding:7px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--muted)}
+    dialog{border:0;border-radius:17px;padding:0;width:min(520px,calc(100% - 28px));box-shadow:0 25px 80px #0007}dialog::backdrop{background:#111827bb}
+    .modal{padding:20px}.field{margin-bottom:10px}.field label{display:block;font-size:.76rem;font-weight:750;margin-bottom:4px}.field input{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:9px}.actions{display:flex;justify-content:flex-end;gap:8px}
+    @media(max-width:850px){.hero{grid-template-columns:1fr}.brainWrap{min-height:135px}.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="head">
+    <div><h1>🧠 MoonShot AI Admin</h1><div class="sub">Predictive and autonomous café fleet management</div></div>
+    <div id="conn" class="pill">Not connected</div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="brainColumn">
+      <div class="brainWrap">
+        <div class="brainHalo"></div>
+        <div id="brain" class="brain">🧠</div>
+      </div>
+      <div class="miniDispatch">
+        <div class="miniDispatchTitle">Zero-disruption proactive dispatch</div>
+        <div class="miniRoad"><div id="truck" class="miniTruck">🚚</div></div>
+        <div class="miniProgress"><div id="progressFill" class="miniProgressFill"></div></div>
+        <div id="destination" class="miniDestination">AI logistics ready. No dispatch required.</div>
+      </div>
+    </div>
+    <div class="heroText">
+      <h2>MoonShot Intelligence Engine</h2>
+      <div id="aiLine" class="aiLine">Waiting for machine data…</div>
+      <div class="metrics">
+        <div class="metric"><strong id="machinesCount">0</strong><span>Machines monitored</span></div>
+        <div class="metric"><strong id="riskCount">0</strong><span>Near-future risks</span></div>
+        <div class="metric"><strong id="preventedCount">0</strong><span>Shortages prevented</span></div>
+        <div class="metric"><strong id="nextRisk">—</strong><span>Earliest predicted need</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Top AI predictions</h2>
+      <div id="riskList" class="riskList"><div class="small">Predictions appear after dispensing activity begins.</div></div>
+    </section>
+
+    <section class="panel">
+      <h2>Outlet health</h2>
+      <div id="outlets" class="outlets"></div>
+    </section>
+  </div>
+
+  <div class="grid" style="margin-top:14px">
+    <section class="panel">
+      <h2>AI explanation</h2>
+      <div id="explanation" class="small">The model estimates ingredient consumption per minute from recent dispense events and divides current stock by that rate.</div>
+      <div class="controls">
+        <button id="scanNow">Run prediction now</button>
+        <button id="settingsBtn" class="secondary">Connection settings</button>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>AI activity</h2>
+      <div id="log" class="log"></div>
+    </section>
+  </div>
+
+  <details class="panel">
+    <summary>Technical details: machine-level predictions</summary>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>Machine</th><th>Outlet</th><th>Predicted need</th><th>Time</th><th>Confidence</th></tr></thead>
+        <tbody id="machineTable"></tbody>
+      </table>
+    </div>
+  </details>
+</main>
+
+<dialog id="settingsDialog">
+  <div class="modal">
+    <h2>MQTT connection</h2>
+    <form id="settingsForm">
+      <div class="field"><label for="host">Host</label><input id="host" required></div>
+      <div class="field"><label for="port">Secure WebSocket port</label><input id="port" required></div>
+      <div class="field"><label for="username">Username</label><input id="username" required></div>
+      <div class="field"><label for="password">Password</label><input id="password" type="password" required></div>
+      <div class="field"><label for="session">Class session code</label><input id="session" required></div>
+      <div class="actions"><button type="button" id="cancelSettings" class="secondary">Cancel</button><button type="submit">Save and connect</button></div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+(()=>{
+  const $=id=>document.getElementById(id);
+  const locations=['Powai','Thane West','Andheri','Dadar','Mira Road'];
+  const ingredients=['coffee','water','milk','vanilla','caramel','hazelnut'];
+  const labels={coffee:'Coffee beans',water:'Water',milk:'Milk',vanilla:'Vanilla syrup',caramel:'Caramel syrup',hazelnut:'Hazelnut syrup'};
+  const capacities={coffee:1000,water:5000,milk:3000,vanilla:500,caramel:500,hazelnut:500};
+  const predictionHorizonSeconds=45;
+  const eventWindowMs=90000;
+
+  let client=null;
+  let machines={};
+  let events=[];
+  let risks=[];
+  let dispatchQueue=[];
+  let activeDispatch=null;
+  let prevented=Number(localStorage.getItem('moonshot_ai_prevented')||0);
+  const lockedOutlets=new Set();
+
+  function cfg(){
+    try{return JSON.parse(localStorage.getItem('moonshot_admin_cfg'))||{}}
+    catch{return{}}
+  }
+  function topic(kind){return `moonshot/${(cfg().session||'').trim().toUpperCase()}/${kind}`}
+  function log(message){
+    const line=document.createElement('div');
+    line.textContent=`[${new Date().toLocaleTimeString()}] ${message}`;
+    $('log').prepend(line);
+  }
+  function openSettings(){
+    const c=cfg();
+    $('host').value=c.host||'mcdcc0c1.ala.asia-southeast1.emqxsl.com';
+    $('port').value=c.port||'8084';
+    $('username').value=c.username||'';
+    $('password').value=c.password||'';
+    $('session').value=c.session||'';
+    $('settingsDialog').showModal();
+  }
+
+  function recentEvents(machineId){
+    const cutoff=Date.now()-eventWindowMs;
+    return events.filter(e=>e.machineId===machineId && new Date(e.timestamp).getTime()>=cutoff);
+  }
+
+  function machinePrediction(machine){
+    if(!machine.online || !machine.inventory) return null;
+    const ev=recentEvents(machine.machineId);
+    if(!ev.length) return null;
+
+    const spanMs=Math.max(15000,Date.now()-Math.min(...ev.map(e=>new Date(e.timestamp).getTime())));
+    const minutes=spanMs/60000;
+    const used=Object.fromEntries(ingredients.map(k=>[k,0]));
+
+    ev.forEach(e=>{
+      ingredients.forEach(k=>used[k]+=Number(e.ingredientsUsed?.[k]||0));
+    });
+
+    const candidates=ingredients.map(k=>{
+      const rate=used[k]/minutes;
+      const qty=Number(machine.inventory[k]||0);
+      return rate>0?{ingredient:k,rate,seconds:(qty/rate)*60}:null;
+    }).filter(Boolean).sort((a,b)=>a.seconds-b.seconds);
+
+    if(!candidates.length) return null;
+
+    const first=candidates[0];
+    const eventFactor=Math.min(1,ev.length/5);
+    const timeFactor=Math.min(1,spanMs/eventWindowMs);
+    const confidence=Math.round(50+35*eventFactor+15*timeFactor);
+
+    return {
+      machineId:machine.machineId,
+      location:machine.location,
+      ingredient:first.ingredient,
+      seconds:first.seconds,
+      confidence,
+      rate:first.rate,
+      events:ev.length,
+      inventory:Number(machine.inventory[first.ingredient]||0)
+    };
+  }
+
+  function calculateRisks(){
+    const predictions=Object.values(machines).map(machinePrediction).filter(Boolean);
+    risks=predictions
+      .filter(p=>p.seconds<=predictionHorizonSeconds)
+      .sort((a,b)=>a.seconds-b.seconds);
+
+    render(predictions);
+    createDispatches();
+  }
+
+  function groupedRisks(){
+    const groups={};
+    risks.forEach(r=>{
+      if(!groups[r.location]) groups[r.location]=[];
+      groups[r.location].push(r);
+    });
+    return groups;
+  }
+
+  function createDispatches(){
+    const groups=groupedRisks();
+
+    Object.entries(groups).forEach(([location,items])=>{
+      if(lockedOutlets.has(location)) return;
+
+      lockedOutlets.add(location);
+      dispatchQueue.push({
+        location,
+        machines:[...new Set(items.map(r=>r.machineId))],
+        ingredients:[...new Set(items.map(r=>r.ingredient))],
+        earliest:Math.min(...items.map(r=>r.seconds)),
+        confidence:Math.round(items.reduce((s,r)=>s+r.confidence,0)/items.length)
+      });
+
+      log(`Predicted shortage at ${location}. One proactive truck queued.`);
+    });
+
+    processDispatch();
+  }
+
+  function processDispatch(){
+    if(activeDispatch || !dispatchQueue.length || !client?.connected) return;
+
+    activeDispatch=dispatchQueue.shift();
+    const job=activeDispatch;
+    const ingredientText=job.ingredients.map(k=>labels[k]).join(', ');
+
+    $('aiLine').textContent=`Predicted need at ${job.location}. Instant proactive dispatch initiated—no service disruption.`;
+    $('destination').innerHTML=
+      `🧠 Predicted need at <strong>${job.location}</strong>. Supplies dispatched immediately.<br>`+
+      `🚚 <strong>${ingredientText}</strong> → ${job.machines.join(', ')} · ${job.confidence}% confidence`;
+
+    $('truck').style.left='calc(100% - 42px)';
+    $('progressFill').style.width='0%';
+    log(`Truck dispatched to ${job.location} for ${job.machines.join(', ')}.`);
+
+    const start=Date.now(),duration=450;
+    const timer=setInterval(()=>{
+      const pct=Math.min(100,(Date.now()-start)/duration*100);
+      $('progressFill').style.width=`${pct}%`;
+      $('truck').style.left=`calc(${100-pct}% - 42px)`;
+
+      if(pct>=100){
+        clearInterval(timer);
+
+        job.machines.forEach(machineId=>{
+          client.publish(
+            `${topic('machines')}/${machineId}/commands`,
+            JSON.stringify({
+              command:'resetInventory',
+              source:'MoonShot Predictive AI',
+              reason:`Predicted near-future requirement at ${job.location}`,
+              predictedIngredients:job.ingredients,
+              confidence:job.confidence,
+              timestamp:new Date().toISOString()
+            }),
+            {qos:1}
+          );
+        });
+
+        prevented++;
+        localStorage.setItem('moonshot_ai_prevented',String(prevented));
+        $('preventedCount').textContent=prevented;
+        $('destination').innerHTML=`✅ Supplies reached <strong>${job.location}</strong> immediately. Service continued without disruption.`;
+        $('aiLine').textContent=`${job.location} remained continuously operational. Predicted shortage prevented.`;
+        log(`Delivery completed. Potential shortage prevented at ${job.location}.`);
+
+        setTimeout(()=>{
+          activeDispatch=null;
+          $('truck').style.left='calc(100% - 42px)';
+          $('progressFill').style.width='0%';
+          setTimeout(()=>lockedOutlets.delete(job.location),3500);
+          processDispatch();
+        },300);
+      }
+    },25);
+  }
+
+  function render(predictions=[]){
+    const machineList=Object.values(machines);
+    $('machinesCount').textContent=machineList.length;
+    $('riskCount').textContent=risks.length;
+    $('preventedCount').textContent=prevented;
+    $('nextRisk').textContent=risks.length?`${Math.max(1,Math.round(risks[0].seconds))} sec`:'—';
+
+    if(risks.length){
+      $('riskList').innerHTML=risks.slice(0,3).map((r,i)=>`
+        <div class="risk ${r.seconds<=20?'critical':''}">
+          <div class="riskTop">
+            <strong>${i+1}. ${r.location} · ${r.machineId}</strong>
+            <span class="badge">${r.seconds<=20?'CRITICAL':'HIGH'} · ${r.confidence}%</span>
+          </div>
+          <div style="margin-top:5px">${labels[r.ingredient]} predicted to require replenishment in ${Math.max(1,Math.round(r.seconds))} seconds.</div>
+          <div class="why">Why: ${r.events} recent dispense event${r.events===1?'':'s'}, current stock ${Math.round(r.inventory)}, consumption rate ${r.rate.toFixed(1)} per minute.</div>
+        </div>`).join('');
+      $('explanation').innerHTML=`MoonShot AI found <strong>${risks.length}</strong> near-future machine risk${risks.length===1?'':'s'}. It groups risks by outlet and sends one consolidated truck before stock-out.`;
+    }else{
+      $('riskList').innerHTML='<div class="small">No replenishment is predicted within the next 45 seconds.</div>';
+      $('explanation').textContent='The model is monitoring recent ingredient consumption. A prediction is generated only after machines begin dispensing.';
+      if(!activeDispatch) $('aiLine').textContent=machineList.length?'All monitored outlets are healthy in the near future.':'Waiting for machine data…';
+    }
+
+    $('outlets').innerHTML=locations.map(location=>{
+      const ms=machineList.filter(m=>m.location===location);
+      const outletRisks=risks.filter(r=>r.location===location);
+      const status=outletRisks.length?'Predicted need':'Healthy';
+      return `<div class="outlet">
+        <div><strong>📍 ${location}</strong><div class="small">${ms.length} machine${ms.length===1?'':'s'} · ${ms.filter(m=>m.online).length} online</div></div>
+        <strong class="${outletRisks.length?'warn':'good'}">${status}</strong>
+      </div>`;
+    }).join('');
+
+    $('machineTable').innerHTML=predictions.length?predictions
+      .sort((a,b)=>a.seconds-b.seconds)
+      .map(p=>`<tr><td>${p.machineId}</td><td>${p.location}</td><td>${labels[p.ingredient]}</td><td>${Math.max(1,Math.round(p.seconds))} sec</td><td>${p.confidence}%</td></tr>`).join('')
+      :'<tr><td colspan="5">No predictions yet.</td></tr>';
+  }
+
+  function connect(){
+    const c=cfg();
+    if(!c.host||!c.port||!c.username||!c.password||!c.session){openSettings();return}
+    if(client){try{client.end(true)}catch{}}
+
+    $('conn').textContent='Connecting…';
+    client=mqtt.connect(`wss://${c.host}:${c.port}/mqtt`,{
+      username:c.username,password:c.password,
+      clientId:`moonshot_ai_${Date.now().toString(36)}`,
+      clean:true,reconnectPeriod:1500,connectTimeout:30000
+    });
+
+    client.on('connect',()=>{
+      $('conn').textContent='Connected';$('conn').className='pill ok';
+      client.subscribe(`${topic('machines')}/+/state`,{qos:1});
+      client.subscribe(topic('dispense'),{qos:1});
+      log('MoonShot predictive AI connected. Autonomous mode active.');
+      setTimeout(calculateRisks,400);
+    });
+    client.on('reconnect',()=>{$('conn').textContent='Reconnecting…';$('conn').className='pill'});
+    client.on('offline',()=>{$('conn').textContent='Offline';$('conn').className='pill'});
+    client.on('error',()=>{$('conn').textContent='Connection error';$('conn').className='pill'});
+
+    client.on('message',(t,m)=>{
+      try{
+        const d=JSON.parse(m.toString());
+        if(t===topic('dispense')){
+          events.unshift(d);
+          events=events.filter(e=>Date.now()-new Date(e.timestamp).getTime()<eventWindowMs);
+        }else if(t.endsWith('/state')&&d.machineId){
+          machines[d.machineId]=d;
+        }
+        calculateRisks();
+      }catch(e){console.warn(e)}
+    });
+  }
+
+  $('scanNow').addEventListener('click',()=>{log('Immediate AI prediction requested.');calculateRisks()});
+  $('settingsBtn').addEventListener('click',openSettings);
+  $('cancelSettings').addEventListener('click',()=>$('settingsDialog').close());
+  $('settingsForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    localStorage.setItem('moonshot_admin_cfg',JSON.stringify({
+      host:$('host').value.trim(),port:$('port').value.trim(),
+      username:$('username').value.trim(),password:$('password').value,
+      session:$('session').value.trim().toUpperCase()
+    }));
+    $('settingsDialog').close();
+    connect();
+  });
+
+  setInterval(calculateRisks,2000);
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>

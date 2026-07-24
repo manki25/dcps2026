@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#07111f">
+  <title>Student Simulator V2</title>
+  <script src="https://unpkg.com/mqtt@5.6.1/dist/mqtt.min.js"></script>
+  <style>
+    :root{
+      --bg:#07111f;--panel:#0d1b2e;--panel2:#10243b;--ink:#f8fafc;--muted:#93a4ba;
+      --line:#1e3652;--blue:#38bdf8;--green:#22c55e;--yellow:#facc15;--orange:#fb923c;--red:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:radial-gradient(circle at top,#10243b 0,#07111f 45%,#040912 100%);color:var(--ink);min-height:100vh}
+    header{position:sticky;top:0;z-index:20;background:#07111fee;backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:14px 18px}
+    .head{max-width:1100px;margin:auto;display:flex;justify-content:space-between;align-items:center;gap:12px}
+    h1{margin:0;font-size:1.15rem}.sub{font-size:.78rem;color:var(--muted);margin-top:3px}
+    .pill{font-size:.75rem;padding:7px 10px;border-radius:999px;background:#1e293b;white-space:nowrap}.pill.ok{background:#14532d;color:#bbf7d0}.pill.bad{background:#7f1d1d;color:#fecaca}
+    main{max-width:1100px;margin:auto;padding:16px}
+    .metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+    .metric{background:linear-gradient(135deg,#10243b,#0b1828);border:1px solid var(--line);border-radius:15px;padding:13px}
+    .metric strong{display:block;font-size:1.45rem}.metric span{font-size:.73rem;color:var(--muted)}
+    .layout{display:grid;grid-template-columns:1.05fr .95fr;gap:14px}
+    .panel{background:linear-gradient(145deg,#0e1f34,#0a1727);border:1px solid var(--line);border-radius:18px;padding:15px}
+    .panel h2{font-size:.98rem;margin:0 0 12px}
+    .field{margin-bottom:11px}.field label{display:block;font-size:.76rem;font-weight:750;margin-bottom:5px;color:#cbd5e1}
+    input,select{width:100%;padding:10px;border:1px solid #334155;border-radius:9px;background:#07111f;color:white;font-size:.94rem}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .route{border:1px solid var(--line);border-radius:13px;padding:11px;margin-bottom:9px;background:#0b1828}
+    .routeTop{display:grid;grid-template-columns:1fr 100px 92px;gap:9px;align-items:center}
+    .routeName strong{display:block;font-size:.86rem}.routeName span{font-size:.71rem;color:var(--muted)}
+    .count{text-align:right;font-size:.78rem;color:var(--muted)}
+    .bar{height:10px;background:#17283c;border-radius:999px;overflow:hidden;margin-top:8px}.fill{height:100%;transition:.25s}
+    .total{font-size:.8rem;padding:10px;border:1px solid var(--line);border-radius:10px;background:#07111f;margin-top:8px}.total.bad{border-color:#7f1d1d;color:#fecaca}
+    .buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    button{border:0;border-radius:9px;padding:10px 12px;background:#0ea5e9;color:white;font-weight:750;cursor:pointer}
+    button:disabled{background:#475569;cursor:not-allowed}.secondary{background:#334155}.danger{background:#dc2626}.success{background:#15803d}.warning{background:#d97706}
+    .progress{height:12px;background:#17283c;border-radius:999px;overflow:hidden;margin-top:13px}.progress>div{height:100%;width:0;background:linear-gradient(90deg,#38bdf8,#22c55e);transition:width .2s}
+    .log{height:355px;overflow:auto;background:#020617;border-radius:12px;padding:11px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:#dbeafe}
+    .log .ok{color:#86efac}.log .warn{color:#fde68a}.log .err{color:#fca5a5}
+    dialog{border:0;border-radius:18px;padding:0;width:min(520px,calc(100% - 28px));background:#0c1a2b;color:white;box-shadow:0 25px 80px #000a}
+    dialog::backdrop{background:#020617cc}.modal{padding:20px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+    @media(max-width:850px){.metrics{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.routeTop{grid-template-columns:1fr 85px 78px}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="head">
+    <div><h1>🚗 Student Simulator V2</h1><div class="sub">Generates virtual students for the Smart Traffic Digital Twin</div></div>
+    <div id="conn" class="pill">Not connected</div>
+  </div>
+</header>
+
+<main>
+  <section class="metrics">
+    <div class="metric"><strong id="planned">0</strong><span>Students planned</span></div>
+    <div class="metric"><strong id="sent">0</strong><span>Published</span></div>
+    <div class="metric"><strong id="remaining">0</strong><span>Remaining</span></div>
+    <div class="metric"><strong id="rate">0</strong><span>Messages/sec</span></div>
+    <div class="metric"><strong id="sessionMetric">—</strong><span>Session</span></div>
+  </section>
+
+  <div class="layout">
+    <section class="panel">
+      <h2>Simulation setup</h2>
+
+      <div class="two">
+        <div class="field"><label for="idStart">First numeric ID</label><input id="idStart" type="number" value="2001" min="0"></div>
+        <div class="field"><label for="idEnd">Last numeric ID</label><input id="idEnd" type="number" value="2075" min="0"></div>
+      </div>
+
+      <div class="field"><label for="prefix">Student ID prefix</label><input id="prefix" value="V2SIM-" placeholder="Example: V2SIM-"></div>
+
+      <div class="field">
+        <label for="interval">Arrival interval</label>
+        <select id="interval">
+          <option value="100">0.1 seconds — burst</option>
+          <option value="250">0.25 seconds</option>
+          <option value="500" selected>0.5 seconds — recommended</option>
+          <option value="1000">1 second</option>
+          <option value="2000">2 seconds — classroom view</option>
+        </select>
+      </div>
+
+      <h2 style="margin-top:17px">Route allocation</h2>
+
+      <div class="route">
+        <div class="routeTop">
+          <div class="routeName"><strong>R1 — EEH–JVLR</strong><span>Fast, lower capacity</span></div>
+          <input id="p1" type="number" min="0" max="100" value="50">
+          <div id="c1" class="count">0 students</div>
+        </div>
+        <div class="bar"><div id="b1" class="fill" style="background:#22c55e;width:0"></div></div>
+      </div>
+
+      <div class="route">
+        <div class="routeTop">
+          <div class="routeName"><strong>R2 — Mulund–Airoli</strong><span>Balanced route</span></div>
+          <input id="p2" type="number" min="0" max="100" value="25">
+          <div id="c2" class="count">0 students</div>
+        </div>
+        <div class="bar"><div id="b2" class="fill" style="background:#38bdf8;width:0"></div></div>
+      </div>
+
+      <div class="route">
+        <div class="routeTop">
+          <div class="routeName"><strong>R3 — LBS–Vikhroli</strong><span>Higher capacity</span></div>
+          <input id="p3" type="number" min="0" max="100" value="15">
+          <div id="c3" class="count">0 students</div>
+        </div>
+        <div class="bar"><div id="b3" class="fill" style="background:#facc15;width:0"></div></div>
+      </div>
+
+      <div class="route">
+        <div class="routeTop">
+          <div class="routeName"><strong>R4 — Ghodbunder–WEH</strong><span>Longest, highest capacity</span></div>
+          <input id="p4" type="number" min="0" max="100" value="10">
+          <div id="c4" class="count">0 students</div>
+        </div>
+        <div class="bar"><div id="b4" class="fill" style="background:#fb923c;width:0"></div></div>
+      </div>
+
+      <div id="totalBox" class="total">Entered total: 100%</div>
+
+      <div class="buttons">
+        <button id="startBtn" class="success">Start live simulation</button>
+        <button id="pauseBtn" class="secondary" disabled>Pause</button>
+        <button id="stopBtn" class="danger" disabled>Stop</button>
+        <button id="previewBtn" class="warning">Preview allocation</button>
+      </div>
+
+      <div class="progress"><div id="progressBar"></div></div>
+      <div id="progressText" class="total">Ready.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Live MQTT publishing</h2>
+      <div id="log" class="log"></div>
+      <div class="buttons">
+        <button id="settingsBtn" class="secondary">MQTT settings</button>
+        <button id="reconnectBtn">Reconnect</button>
+        <button id="clearBtn" class="secondary">Clear log</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<dialog id="settingsDialog">
+  <form id="settingsForm" class="modal">
+    <h2 style="margin-top:0">MQTT settings</h2>
+    <div class="field"><label for="host">Broker host</label><input id="host" value="mcdcc0c1.ala.asia-southeast1.emqxsl.com" required></div>
+    <div class="field"><label for="port">Secure WebSocket port</label><input id="port" value="8084" required></div>
+    <div class="field"><label for="username">MQTT username</label><input id="username" required></div>
+    <div class="field"><label for="password">MQTT password</label><input id="password" type="password" required></div>
+    <div class="field"><label for="session">Session code</label><input id="session" value="CLASS01" required></div>
+    <div class="actions"><button type="button" id="cancelSettings" class="secondary">Cancel</button><button>Save and connect</button></div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let client = null;
+  let queue = [];
+  let sentCount = 0;
+  let timer = null;
+  let paused = false;
+  let startedAt = 0;
+
+  function cfg() {
+    try { return JSON.parse(localStorage.getItem('tp_v2_sim_cfg')) || {}; }
+    catch { return {}; }
+  }
+
+  function topic() {
+    return `dcps/traffic/${cfg().session.trim().toUpperCase()}/selection`;
+  }
+
+  function addLog(text, type='') {
+    const line = document.createElement('div');
+    if (type) line.className = type;
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+    $('log').prepend(line);
+  }
+
+  function openSettings() {
+    const c = cfg();
+    ['host','port','username','password','session'].forEach(k => {
+      if (c[k]) $(k).value = c[k];
+    });
+    $('settingsDialog').showModal();
+  }
+
+  function connect() {
+    const c = cfg();
+    if (!c.host || !c.port || !c.username || !c.password || !c.session) {
+      openSettings();
+      return;
+    }
+
+    if (client) {
+      try { client.end(true); } catch {}
+    }
+
+    $('conn').textContent = 'Connecting…';
+    $('conn').className = 'pill';
+    $('sessionMetric').textContent = c.session.toUpperCase();
+
+    client = mqtt.connect(`wss://${c.host}:${c.port}/mqtt`, {
+      keepalive: 60,
+      username: c.username,
+      password: c.password,
+      clientId: `v2sim_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,
+      clean: true,
+      reconnectPeriod: 1500,
+      connectTimeout: 30000
+    });
+
+    client.on('connect', () => {
+      $('conn').textContent = 'Connected';
+      $('conn').className = 'pill ok';
+      addLog(`Connected to session ${c.session.toUpperCase()}.`, 'ok');
+    });
+
+    client.on('reconnect', () => {
+      $('conn').textContent = 'Reconnecting…';
+    });
+
+    client.on('offline', () => {
+      $('conn').textContent = 'Offline';
+      $('conn').className = 'pill bad';
+    });
+
+    client.on('error', err => {
+      $('conn').textContent = 'Connection error';
+      $('conn').className = 'pill bad';
+      addLog(`Connection error: ${err.message}`, 'err');
+      console.error(err);
+    });
+  }
+
+  function inputs() {
+    return {
+      start: Math.trunc(Number($('idStart').value)),
+      end: Math.trunc(Number($('idEnd').value)),
+      proportions: ['p1','p2','p3','p4'].map(id => Math.max(0, Number($(id).value) || 0))
+    };
+  }
+
+  function allocation(total, proportions) {
+    const sum = proportions.reduce((a,b)=>a+b,0);
+    if (!sum) return [0,0,0,0];
+
+    const exact = proportions.map(p => total*p/sum);
+    const counts = exact.map(Math.floor);
+    let remainder = total-counts.reduce((a,b)=>a+b,0);
+
+    const order = exact.map((v,i)=>({i,r:v-counts[i]})).sort((a,b)=>b.r-a.r);
+    for (let i=0;i<remainder;i++) counts[order[i%order.length].i]++;
+    return counts;
+  }
+
+  function preview() {
+    const {start,end,proportions} = inputs();
+    const total = Number.isFinite(start) && Number.isFinite(end) && end>=start ? end-start+1 : 0;
+    const sum = proportions.reduce((a,b)=>a+b,0);
+    const counts = allocation(total, proportions);
+
+    $('planned').textContent = total;
+    $('remaining').textContent = Math.max(0,total-sentCount);
+
+    counts.forEach((count,i) => {
+      $(`c${i+1}`).textContent = `${count} student${count===1?'':'s'}`;
+      $(`b${i+1}`).style.width = total ? `${count/total*100}%` : '0%';
+    });
+
+    $('totalBox').textContent = `Entered total: ${sum}% · proportions are normalized automatically`;
+    $('totalBox').className = sum ? 'total' : 'total bad';
+
+    return {total,counts,sum,start,end};
+  }
+
+  function shuffle(arr) {
+    for (let i=arr.length-1;i>0;i--) {
+      const j=Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
+  }
+
+  function buildQueue() {
+    const p = preview();
+    if (!p.total) throw new Error('Last ID must be equal to or greater than first ID.');
+    if (!p.sum) throw new Error('At least one route proportion must be greater than zero.');
+
+    const routes = [];
+    p.counts.forEach((count,i) => {
+      for (let j=0;j<count;j++) routes.push(`R${i+1}`);
+    });
+    shuffle(routes);
+
+    const prefix = $('prefix').value;
+    queue = [];
+    for (let id=p.start; id<=p.end; id++) {
+      queue.push({
+        studentId: `${prefix}${id}`,
+        studentName: `${prefix}${id}`,
+        routeId: routes[id-p.start],
+        timestamp: null
+      });
+    }
+  }
+
+  function updateStatus() {
+    const total = sentCount + queue.length;
+    const pct = total ? Math.round(sentCount/total*100) : 0;
+
+    $('sent').textContent = sentCount;
+    $('remaining').textContent = queue.length;
+    $('progressBar').style.width = `${pct}%`;
+
+    const elapsed = startedAt ? Math.max(.001,(Date.now()-startedAt)/1000) : 0;
+    $('rate').textContent = elapsed ? (sentCount/elapsed).toFixed(1) : '0';
+
+    if (timer || paused) {
+      $('progressText').textContent = `${sentCount} of ${total} virtual students published (${pct}%).`;
+    } else if (sentCount && !queue.length) {
+      $('progressText').textContent = `Completed: ${sentCount} students published.`;
+    } else {
+      $('progressText').textContent = 'Ready.';
+    }
+  }
+
+  function publishNext() {
+    if (paused) return;
+    if (!queue.length) {
+      finish();
+      return;
+    }
+
+    const student = queue.shift();
+    student.timestamp = new Date().toISOString();
+
+    client.publish(topic(), JSON.stringify(student), {qos:1}, err => {
+      if (err) {
+        addLog(`Failed: ${student.studentId} → ${student.routeId}: ${err.message}`, 'err');
+      } else {
+        sentCount++;
+        addLog(`${student.studentId} selected ${student.routeId}`, 'ok');
+      }
+      updateStatus();
+    });
+  }
+
+  function start() {
+    if (!client?.connected) {
+      alert('Connect to MQTT before starting.');
+      openSettings();
+      return;
+    }
+
+    try { buildQueue(); }
+    catch (e) { alert(e.message); return; }
+
+    sentCount = 0;
+    paused = false;
+    startedAt = Date.now();
+
+    $('startBtn').disabled = true;
+    $('pauseBtn').disabled = false;
+    $('stopBtn').disabled = false;
+    $('pauseBtn').textContent = 'Pause';
+
+    const interval = Number($('interval').value);
+    addLog(`Started ${queue.length} virtual students at ${interval} ms intervals.`, 'warn');
+
+    publishNext();
+    timer = setInterval(publishNext, interval);
+    updateStatus();
+  }
+
+  function finish() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    paused = false;
+
+    $('startBtn').disabled = false;
+    $('pauseBtn').disabled = true;
+    $('stopBtn').disabled = true;
+    $('pauseBtn').textContent = 'Pause';
+
+    updateStatus();
+    addLog(`Simulation complete: ${sentCount} students published.`, 'warn');
+  }
+
+  function stop() {
+    if (timer) clearInterval(timer);
+    timer = null;
+
+    const unsent = queue.length;
+    queue = [];
+    paused = false;
+
+    $('startBtn').disabled = false;
+    $('pauseBtn').disabled = true;
+    $('stopBtn').disabled = true;
+    $('pauseBtn').textContent = 'Pause';
+
+    updateStatus();
+    addLog(`Stopped. ${unsent} queued students were discarded.`, 'warn');
+  }
+
+  function togglePause() {
+    paused = !paused;
+    $('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+    addLog(paused ? 'Simulation paused.' : 'Simulation resumed.', 'warn');
+  }
+
+  $('settingsForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const c = {
+      host:$('host').value.trim(),
+      port:$('port').value.trim(),
+      username:$('username').value.trim(),
+      password:$('password').value,
+      session:$('session').value.trim().toUpperCase()
+    };
+    localStorage.setItem('tp_v2_sim_cfg', JSON.stringify(c));
+    $('settingsDialog').close();
+    connect();
+  });
+
+  ['idStart','idEnd','p1','p2','p3','p4'].forEach(id => $(id).addEventListener('input', preview));
+
+  $('startBtn').addEventListener('click', start);
+  $('pauseBtn').addEventListener('click', togglePause);
+  $('stopBtn').addEventListener('click', stop);
+  $('previewBtn').addEventListener('click', () => {
+    const p=preview();
+    addLog(`Preview: ${p.total} students → R1 ${p.counts[0]}, R2 ${p.counts[1]}, R3 ${p.counts[2]}, R4 ${p.counts[3]}.`);
+  });
+
+  $('settingsBtn').addEventListener('click', openSettings);
+  $('reconnectBtn').addEventListener('click', connect);
+  $('clearBtn').addEventListener('click', () => $('log').innerHTML='');
+  $('cancelSettings').addEventListener('click', () => $('settingsDialog').close());
+
+  preview();
+  updateStatus();
+  connect();
+})();
+</script>
+</body>
+</html>

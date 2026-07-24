@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>MoonShot Automated AI Admin V5</title>
+  <title>MoonShot Automated Admin V5</title>
   <script src="https://unpkg.com/mqtt@5.6.1/dist/mqtt.min.js"></script>
   <style>
     :root{
@@ -35,10 +35,10 @@
     .small{font-size:.73rem;color:var(--muted)}
     dialog{border:0;border-radius:17px;padding:0;width:min(520px,calc(100% - 28px));box-shadow:0 25px 80px #0006}dialog::backdrop{background:#2b1b12bb}.modal{padding:20px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
     
-    .aiHero{background:#2b1b12;color:#fff;border-radius:18px;padding:16px;margin-bottom:14px;overflow:hidden}
-    .aiTop{display:flex;justify-content:space-between;align-items:center;gap:12px}
-    .aiStatus{font-size:.82rem;color:#ead7c7;margin-top:4px}
-    .aiBadge{padding:7px 10px;border-radius:999px;background:#276749;font-size:.75rem;font-weight:800;white-space:nowrap}
+    .Hero{background:#2b1b12;color:#fff;border-radius:18px;padding:16px;margin-bottom:14px;overflow:hidden}
+    .Top{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .Status{font-size:.82rem;color:#ead7c7;margin-top:4px}
+    .Badge{padding:7px 10px;border-radius:999px;background:#276749;font-size:.75rem;font-weight:800;white-space:nowrap}
     .dispatchBoard{margin-top:14px;background:#fffaf512;border:1px solid #ffffff2b;border-radius:14px;padding:13px}
     .road{height:70px;position:relative;border-radius:12px;background:linear-gradient(#5b4639 0 33%,#2f2f2f 34% 70%,#5b4639 71%);overflow:hidden}
     .road:after{content:"";position:absolute;left:0;right:0;top:49%;border-top:3px dashed #f7df9c}
@@ -56,7 +56,7 @@
 <body>
 <header>
   <div class="head">
-    <div><h1>🤖 MoonShot Automated AI Admin</h1><div class="sub">Autonomous fleet monitoring, supply dispatch and recipe management</div></div>
+    <div><h1>🤖 MoonShot Automated Admin</h1><div class="sub">Autonomous fleet monitoring, supply dispatch and recipe management</div></div>
     <div id="conn" class="pill">Not connected</div>
   </div>
 </header>
@@ -65,7 +65,7 @@
   <section class="aiHero">
     <div class="aiTop">
       <div>
-        <strong>MoonShot AI Supply Controller</strong>
+        <strong>MoonShot Supply Controller</strong>
         <div id="aiStatus" class="aiStatus">Scanning all outlets for unavailable flavours…</div>
       </div>
       <div id="aiBadge" class="aiBadge">AUTOPILOT ON</div>
@@ -147,7 +147,7 @@
       </section>
 
       <section class="panel" style="margin-top:14px">
-        <h2>AI replenishment policy</h2>
+        <h2>Replenishment policy</h2>
         <div class="policy">
           Supplies are dispatched only when one or more flavours become unavailable across an entire café outlet.
           All unavailable flavours at that outlet are consolidated into one truck journey. A single depleted
@@ -158,7 +158,7 @@
           <span class="form-check-label">Enable autonomous replenishment</span>
         </label>
         <div class="field" style="margin-top:12px">
-          <label for="scanInterval">AI scan frequency</label>
+          <label for="scanInterval">Scan frequency</label>
           <select id="scanInterval">
             <option value="1000">Every 1 second</option>
             <option value="2000" selected>Every 2 seconds</option>
@@ -166,12 +166,12 @@
           </select>
         </div>
         <div class="buttons">
-          <button id="scanNow">Run AI scan now</button>
+          <button id="scanNow">Run scan now</button>
         </div>
       </section>
 
       <section class="panel" style="margin-top:14px">
-        <h2>MoonShot AI activity log</h2>
+        <h2>MoonShot activity log</h2>
         <div id="autoLog" class="autoLog"></div>
       </section>
 

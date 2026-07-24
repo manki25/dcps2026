@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MoonShot Café Admin Console</title>
+  <script src="https://unpkg.com/mqtt@5.6.1/dist/mqtt.min.js"></script>
+  <style>
+    :root{
+      --bg:#f3eee9;--panel:#fffaf5;--ink:#2b1b12;--muted:#7c675c;--line:#ead7c7;
+      --brown:#7c3f1d;--brown2:#a85d2b;--green:#2f855a;--amber:#b7791f;--red:#c53030;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+    header{background:#3b2417;color:#fff;padding:15px 18px;position:sticky;top:0;z-index:10}
+    .head{max-width:1280px;margin:auto;display:flex;justify-content:space-between;align-items:center}
+    h1{font-size:1.15rem;margin:0}.sub{font-size:.76rem;color:#ead7c7;margin-top:3px}.pill{padding:6px 10px;border-radius:999px;background:#5b3824;font-size:.74rem}.pill.ok{background:#276749}
+    main{max-width:1280px;margin:auto;padding:16px}
+    .metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+    .metric{background:#fff;border:1px solid var(--line);border-radius:15px;padding:13px}
+    .metric strong{display:block;font-size:1.45rem}.metric span{font-size:.73rem;color:var(--muted)}
+    .layout{display:grid;grid-template-columns:1.35fr .65fr;gap:14px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:15px}
+    .panel h2{font-size:.98rem;margin:0 0 12px}
+    .machines{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}
+    .machine{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
+    .machineTop{display:flex;justify-content:space-between;gap:8px}.online{color:var(--green)}.offline{color:var(--red)}
+    .inventory{display:grid;gap:6px;margin-top:10px}.ingTop{display:flex;justify-content:space-between;font-size:.74rem}.bar{height:8px;background:#eee2d7;border-radius:999px;overflow:hidden}.fill{height:100%;background:var(--brown2)}.low{background:var(--red)}
+    table{width:100%;border-collapse:collapse;font-size:.8rem}th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--muted)}
+    .field{margin-bottom:10px}.field label{display:block;font-size:.76rem;font-weight:750;margin-bottom:4px}.field input,.field select{width:100%;padding:9px;border:1px solid #cbb8a8;border-radius:9px;background:white}
+    .recipeEditor{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:9px;background:#fff}
+    .recipeGrid{display:grid;grid-template-columns:1.2fr repeat(6,.7fr);gap:6px;align-items:center}.recipeGrid input{width:100%;padding:7px;border:1px solid #d8c7b8;border-radius:7px}
+    button{border:0;border-radius:9px;padding:9px 11px;background:var(--brown2);color:white;font-weight:750;cursor:pointer}.secondary{background:#6b7280}.danger{background:#c53030}.success{background:#2f855a}
+    .buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .small{font-size:.73rem;color:var(--muted)}
+    dialog{border:0;border-radius:17px;padding:0;width:min(520px,calc(100% - 28px));box-shadow:0 25px 80px #0006}dialog::backdrop{background:#2b1b12bb}.modal{padding:20px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+    @media(max-width:1000px){.metrics{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.machines{grid-template-columns:1fr}.recipeGrid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="head">
+    <div><h1>🌍 MoonShot Café Admin Console</h1><div class="sub">Global fleet monitoring and recipe management</div></div>
+    <div id="conn" class="pill">Not connected</div>
+  </div>
+</header>
+
+<main>
+  <section class="metrics">
+    <div class="metric"><strong id="machineCount">0</strong><span>Machines reporting</span></div>
+    <div class="metric"><strong id="onlineCount">0</strong><span>Machines online</span></div>
+    <div class="metric"><strong id="coffeeCount">0</strong><span>Total coffees dispensed</span></div>
+    <div class="metric"><strong id="topRecipe">—</strong><span>Most popular recipe</span></div>
+    <div class="metric"><strong id="lowStockCount">0</strong><span>Low-stock alerts</span></div>
+  </section>
+
+  <section class="panel" style="margin-bottom:14px">
+    <h2>Outlet overview</h2>
+    <div id="locationSummary" class="machines"></div>
+  </section>
+
+  <div class="layout">
+    <div>
+      <section class="panel">
+        <h2>Machine fleet</h2>
+        <div id="machines" class="machines"></div>
+      </section>
+
+      <section class="panel" style="margin-top:14px">
+        <h2>Aggregate ingredient inventory</h2>
+        <div id="aggregate"></div>
+      </section>
+
+      <section class="panel" style="margin-top:14px">
+        <h2>Latest dispense events</h2>
+        <div style="overflow:auto;max-height:320px">
+          <table><thead><tr><th>Time</th><th>Machine</th><th>Location</th><th>Recipe</th></tr></thead><tbody id="eventsBody"></tbody></table>
+        </div>
+      </section>
+    </div>
+
+    <aside>
+      <section class="panel">
+        <h2>Push new recipes</h2>
+        <div class="small" style="margin-bottom:8px">Values are ingredient usage per cup. Coffee is in grams; all others are in millilitres.</div>
+        <div class="recipeEditor" style="background:#fff7ed;border-color:#d9a46f">
+          <strong>Add a new flavour</strong>
+          <div class="field" style="margin-top:9px">
+            <label for="newRecipeName">Flavour name</label>
+            <input id="newRecipeName" placeholder="Example: Irish Cream Latte">
+          </div>
+          <div class="field">
+            <label for="newRecipeEmoji">Emoji or short symbol</label>
+            <input id="newRecipeEmoji" value="☕" maxlength="4">
+          </div>
+          <div class="recipeGrid">
+            <span class="small">Ingredient usage</span>
+            <input id="newCoffee" type="number" min="0" value="18" title="Coffee grams">
+            <input id="newWater" type="number" min="0" value="35" title="Water ml">
+            <input id="newMilk" type="number" min="0" value="150" title="Milk ml">
+            <input id="newVanilla" type="number" min="0" value="0" title="Vanilla ml">
+            <input id="newCaramel" type="number" min="0" value="0" title="Caramel ml">
+            <input id="newHazelnut" type="number" min="0" value="0" title="Hazelnut ml">
+          </div>
+          <div class="small">Coffee · Water · Milk · Vanilla · Caramel · Hazelnut</div>
+          <div class="buttons"><button id="addRecipe" type="button">Add flavour to menu</button></div>
+        </div>
+
+        <div id="recipeEditors"></div>
+        <div class="buttons"><button id="pushRecipes" class="success">Push menu to all machines</button><button id="resetRecipes" class="secondary">Reset defaults</button></div>
+        <div id="recipeStatus" class="small" style="margin-top:8px">New flavours will appear on all connected machines after the menu is pushed.</div>
+      </section>
+
+      <section class="panel" style="margin-top:14px">
+        <h2>Remote replenishment</h2>
+        <div class="field"><label for="machineSelect">Individual machine</label><select id="machineSelect"></select></div>
+        <div class="buttons"><button id="refillSelected">Replenish selected machine</button></div>
+
+        <div class="field" style="margin-top:13px"><label for="locationSelect">Entire café outlet</label>
+          <select id="locationSelect">
+            <option>Powai</option>
+            <option>Thane West</option>
+            <option>Andheri</option>
+            <option>Dadar</option>
+            <option>Mira Road</option>
+          </select>
+        </div>
+        <div class="buttons"><button id="refillLocation" class="success">Replenish outlet</button><button id="refillAll" class="secondary">Replenish entire fleet</button></div>
+        <div id="refillStatus" class="small" style="margin-top:9px">Remote commands will be sent through MQTT.</div>
+      </section>
+
+      <section class="panel" style="margin-top:14px">
+        <h2>Connection</h2>
+        <div class="small">Session: <strong id="sessionLabel">—</strong></div>
+        <div class="buttons"><button id="settingsBtn" class="secondary">Settings</button><button id="reconnectBtn">Reconnect</button></div>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<dialog id="settingsDialog">
+  <form id="settingsForm" class="modal">
+    <h2 style="margin-top:0">MQTT connection</h2>
+    <div class="field"><label for="host">Broker host</label><input id="host" value="mcdcc0c1.ala.asia-southeast1.emqxsl.com" required></div>
+    <div class="field"><label for="port">Secure WebSocket port</label><input id="port" value="8084" required></div>
+    <div class="field"><label for="username">MQTT username</label><input id="username" required></div>
+    <div class="field"><label for="password">MQTT password</label><input id="password" type="password" required></div>
+    <div class="field"><label for="session">Class session code</label><input id="session" value="MOONSHOT01" required></div>
+    <div class="actions"><button type="button" id="cancelSettings" class="secondary">Cancel</button><button>Save and connect</button></div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  const $=id=>document.getElementById(id);
+
+  const defaultRecipes={
+    espresso:{name:'Espresso',emoji:'☕',ingredients:{coffee:18,water:40,milk:0,vanilla:0,caramel:0,hazelnut:0}},
+    cappuccino:{name:'Cappuccino',emoji:'🥛',ingredients:{coffee:18,water:35,milk:120,vanilla:0,caramel:0,hazelnut:0}},
+    latte:{name:'Café Latte',emoji:'🌙',ingredients:{coffee:18,water:35,milk:180,vanilla:0,caramel:0,hazelnut:0}},
+    mocha:{name:'Mocha',emoji:'🍫',ingredients:{coffee:18,water:35,milk:150,vanilla:0,caramel:20,hazelnut:0}},
+    vanilla:{name:'Vanilla Latte',emoji:'🌼',ingredients:{coffee:18,water:35,milk:170,vanilla:15,caramel:0,hazelnut:0}},
+    caramel:{name:'Caramel Macchiato',emoji:'🍮',ingredients:{coffee:18,water:30,milk:160,vanilla:0,caramel:18,hazelnut:0}},
+    hazelnut:{name:'Hazelnut Latte',emoji:'🌰',ingredients:{coffee:18,water:35,milk:170,vanilla:0,caramel:0,hazelnut:15}}
+  };
+  const capacities={coffee:1000,water:5000,milk:3000,vanilla:500,caramel:500,hazelnut:500};
+  const locations=['Powai','Thane West','Andheri','Dadar','Mira Road'];
+  let recipes=JSON.parse(JSON.stringify(defaultRecipes));
+  let client=null,machines={},events=[],recipeCounts={};
+
+  function cfg(){try{return JSON.parse(localStorage.getItem('moonshot_admin_cfg'))||{}}catch{return{}}}
+  function topic(kind){return `moonshot/${cfg().session.trim().toUpperCase()}/${kind}`}
+  function label(k){return ({coffee:'Coffee',water:'Water',milk:'Milk',vanilla:'Vanilla',caramel:'Caramel',hazelnut:'Hazelnut'})[k]}
+  function unit(k){return k==='coffee'?'g':'ml'}
+
+  function renderRecipeEditors(){
+    $('recipeEditors').innerHTML=Object.entries(recipes).map(([id,r])=>`
+      <div class="recipeEditor">
+        <div class="recipeGrid">
+          <strong>${r.emoji||'☕'} ${r.name}</strong>
+          ${['coffee','water','milk','vanilla','caramel','hazelnut'].map(k=>`<input data-recipe="${id}" data-ing="${k}" type="number" min="0" value="${r.ingredients[k]||0}" title="${label(k)}">`).join('')}
+        </div>
+        <div class="small">Coffee · Water · Milk · Vanilla · Caramel · Hazelnut</div>
+        <div class="buttons"><button type="button" class="danger removeRecipe" data-remove="${id}">Remove flavour</button></div>
+      </div>`).join('');
+
+    document.querySelectorAll('.removeRecipe').forEach(button=>{
+      button.addEventListener('click',()=>{
+        const id=button.dataset.remove;
+        if(Object.keys(recipes).length<=1){
+          alert('At least one flavour must remain on the menu.');
+          return;
+        }
+        delete recipes[id];
+        renderRecipeEditors();
+        $('recipeStatus').textContent='Flavour removed locally. Push the menu to update all machines.';
+      });
+    });
+  }
+
+  function render(){
+    const list=Object.values(machines);
+    const online=list.filter(m=>m.online).length;
+    const totalCoffee=list.reduce((s,m)=>s+(m.dispenseCount||0),0);
+    const top=Object.entries(recipeCounts).sort((a,b)=>b[1]-a[1])[0];
+    let low=0;
+    list.forEach(m=>Object.keys(capacities).forEach(k=>{if((m.inventory?.[k]||0)/capacities[k]<.2)low++}));
+
+    $('machineCount').textContent=list.length;
+    $('onlineCount').textContent=online;
+    $('coffeeCount').textContent=totalCoffee;
+    $('topRecipe').textContent=top?top[0]:'—';
+    $('lowStockCount').textContent=low;
+    $('sessionLabel').textContent=cfg().session||'—';
+
+    $('locationSummary').innerHTML=locations.map(location=>{
+      const outletMachines=list.filter(m=>m.location===location);
+      const onlineMachines=outletMachines.filter(m=>m.online).length;
+      const lowMachines=outletMachines.filter(m=>Object.keys(capacities).some(k=>((m.inventory?.[k]||0)/capacities[k])<.2));
+      const totalDispensed=outletMachines.reduce((s,m)=>s+(m.dispenseCount||0),0);
+      const lowIds=lowMachines.map(m=>m.machineId).slice(0,5);
+      return `<div class="machine">
+        <div class="machineTop"><div><strong>📍 ${location}</strong><div class="small">${outletMachines.length} machines · ${onlineMachines} online</div></div>
+        <strong class="${lowMachines.length?'offline':'online'}">${lowMachines.length?lowMachines.length+' low':'Stock OK'}</strong></div>
+        <div class="small" style="margin-top:8px">${totalDispensed} coffees dispensed</div>
+        <div class="small" style="margin-top:6px">${lowMachines.length?`Running low: ${lowIds.join(', ')}${lowMachines.length>5?' and '+(lowMachines.length-5)+' more':''}`:'No machine is currently below 20% stock.'}</div>
+      </div>`;
+    }).join('');
+
+    $('machines').innerHTML=list.length?list.map(m=>`
+      <div class="machine">
+        <div class="machineTop"><div><strong>${m.machineId}</strong><div class="small">${m.location||'Unknown location'}</div></div><strong class="${m.online?'online':'offline'}">${m.online?'● Online':'● Offline'}</strong></div>
+        <div class="small" style="margin-top:5px">${m.dispenseCount||0} coffees dispensed</div>
+        <div class="inventory">${Object.keys(capacities).map(k=>{
+          const v=m.inventory?.[k]||0,p=Math.max(0,Math.min(100,v/capacities[k]*100));
+          return `<div><div class="ingTop"><span>${label(k)}</span><span>${Math.round(v)} ${unit(k)}</span></div><div class="bar"><div class="fill ${p<20?'low':''}" style="width:${p}%"></div></div></div>`
+        }).join('')}</div>
+      </div>`).join(''):'<div class="small">No machines have reported yet.</div>';
+
+    const totals=Object.fromEntries(Object.keys(capacities).map(k=>[k,list.reduce((s,m)=>s+(m.inventory?.[k]||0),0)]));
+    const maxes=Object.fromEntries(Object.keys(capacities).map(k=>[k,list.length*capacities[k]]));
+    $('aggregate').innerHTML=Object.keys(capacities).map(k=>{
+      const pct=maxes[k]?totals[k]/maxes[k]*100:0;
+      return `<div style="margin-bottom:10px"><div class="ingTop"><strong>${label(k)}</strong><span>${Math.round(totals[k])} / ${maxes[k]} ${unit(k)}</span></div><div class="bar"><div class="fill ${pct<20?'low':''}" style="width:${pct}%"></div></div></div>`
+    }).join('');
+
+    $('eventsBody').innerHTML=events.slice(0,100).map(e=>`<tr><td>${new Date(e.timestamp).toLocaleTimeString()}</td><td>${e.machineId}</td><td>${e.location}</td><td>${e.recipeName}</td></tr>`).join('');
+
+    $('machineSelect').innerHTML=locations.map(location=>{
+      const opts=list.filter(m=>m.location===location).sort((a,b)=>a.machineId.localeCompare(b.machineId))
+        .map(m=>`<option value="${m.machineId}">${m.machineId}${Object.keys(capacities).some(k=>((m.inventory?.[k]||0)/capacities[k])<.2)?' ⚠ Low':''}</option>`).join('');
+      return opts?`<optgroup label="${location}">${opts}</optgroup>`:'';
+    }).join('');
+  }
+
+  function makeRecipeId(name){
+    const base=name.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9]+/g,'-')
+      .replace(/^-+|-+$/g,'') || 'flavour';
+    let id=base;
+    let n=2;
+    while(recipes[id]) id=`${base}-${n++}`;
+    return id;
+  }
+
+  function addNewRecipe(){
+    const name=$('newRecipeName').value.trim();
+    if(!name){
+      alert('Enter a flavour name.');
+      $('newRecipeName').focus();
+      return;
+    }
+
+    const id=makeRecipeId(name);
+    recipes[id]={
+      name,
+      emoji:$('newRecipeEmoji').value.trim() || '☕',
+      ingredients:{
+        coffee:Math.max(0,Number($('newCoffee').value)||0),
+        water:Math.max(0,Number($('newWater').value)||0),
+        milk:Math.max(0,Number($('newMilk').value)||0),
+        vanilla:Math.max(0,Number($('newVanilla').value)||0),
+        caramel:Math.max(0,Number($('newCaramel').value)||0),
+        hazelnut:Math.max(0,Number($('newHazelnut').value)||0)
+      }
+    };
+
+    $('newRecipeName').value='';
+    $('newRecipeEmoji').value='☕';
+    renderRecipeEditors();
+    $('recipeStatus').textContent=`${name} added locally. Click “Push menu to all machines” to publish it.`;
+  }
+
+  function pushRecipes(){
+    document.querySelectorAll('[data-recipe][data-ing]').forEach(input=>{
+      recipes[input.dataset.recipe].ingredients[input.dataset.ing]=Math.max(0,Number(input.value)||0);
+    });
+    client.publish(topic('recipes'),JSON.stringify({command:'replaceRecipes',recipes,timestamp:new Date().toISOString()}),{qos:1,retain:true},err=>{
+      $('recipeStatus').textContent=err
+        ? `Menu push failed: ${err.message}`
+        : `${Object.keys(recipes).length} flavours pushed successfully to all machines.`;
+    });
+  }
+
+  function refill(machineId){
+    if(!machineId)return;
+    client.publish(`${topic('machines')}/${machineId}/commands`,JSON.stringify({command:'resetInventory',timestamp:new Date().toISOString()}),{qos:1});
+  }
+
+  function refillLocation(location){
+    const ids=Object.values(machines).filter(m=>m.location===location).map(m=>m.machineId);
+    ids.forEach(refill);
+    $('refillStatus').textContent=ids.length
+      ? `Replenishment command sent to ${ids.length} machine${ids.length===1?'':'s'} at ${location}.`
+      : `No machines are currently registered at ${location}.`;
+  }
+
+  function openSettings(){
+    const c=cfg();['host','port','username','password','session'].forEach(k=>{if(c[k])$(k).value=c[k]});
+    $('settingsDialog').showModal();
+  }
+
+  function connect(){
+    const c=cfg();
+    if(!c.host||!c.port||!c.username||!c.password||!c.session){openSettings();return}
+    if(client){try{client.end(true)}catch{}}
+    $('conn').textContent='Connecting…';$('conn').className='pill';
+
+    client=mqtt.connect(`wss://${c.host}:${c.port}/mqtt`,{
+      username:c.username,password:c.password,clientId:`moonshot_admin_${Date.now().toString(36)}`,
+      clean:true,reconnectPeriod:1500,connectTimeout:30000
+    });
+
+    client.on('connect',()=>{
+      $('conn').textContent='Connected';$('conn').className='pill ok';
+      client.subscribe(`${topic('machines')}/+/state`,{qos:1});
+      client.subscribe(topic('dispense'),{qos:1});
+    });
+    client.on('reconnect',()=>{$('conn').textContent='Reconnecting…'});
+    client.on('offline',()=>{$('conn').textContent='Offline'});
+    client.on('error',e=>{console.error(e);$('conn').textContent='Connection error'});
+    client.on('message',(t,m)=>{
+      try{
+        const d=JSON.parse(m.toString());
+        if(t===topic('dispense')){
+          events.unshift(d);recipeCounts[d.recipeName]=(recipeCounts[d.recipeName]||0)+1;
+        }else if(t.endsWith('/state') && d.machineId){
+          machines[d.machineId]=d;
+        }
+        render();
+      }catch(e){console.warn(e)}
+    });
+  }
+
+  $('addRecipe').addEventListener('click',addNewRecipe);
+  $('pushRecipes').addEventListener('click',pushRecipes);
+  $('resetRecipes').addEventListener('click',()=>{recipes=JSON.parse(JSON.stringify(defaultRecipes));renderRecipeEditors()});
+  $('refillSelected').addEventListener('click',()=>{
+    const id=$('machineSelect').value;
+    refill(id);
+    $('refillStatus').textContent=id?`Replenishment command sent to ${id}.`:'Select a machine first.';
+  });
+  $('refillLocation').addEventListener('click',()=>refillLocation($('locationSelect').value));
+  $('refillAll').addEventListener('click',()=>{
+    const ids=Object.keys(machines);
+    ids.forEach(refill);
+    $('refillStatus').textContent=`Replenishment command sent to all ${ids.length} reporting machines.`;
+  });
+  $('settingsBtn').addEventListener('click',openSettings);
+  $('reconnectBtn').addEventListener('click',connect);
+  $('cancelSettings').addEventListener('click',()=>$('settingsDialog').close());
+  $('settingsForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    localStorage.setItem('moonshot_admin_cfg',JSON.stringify({
+      host:$('host').value.trim(),port:$('port').value.trim(),username:$('username').value.trim(),
+      password:$('password').value,session:$('session').value.trim().toUpperCase()
+    }));
+    $('settingsDialog').close();connect();
+  });
+
+  renderRecipeEditors();render();connect();
+})();
+</script>
+</body>
+</html>
